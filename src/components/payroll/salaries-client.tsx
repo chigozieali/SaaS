@@ -2,7 +2,8 @@
 
 import useSWR from "swr";
 import { useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, Eye } from "lucide-react";
+import type { ColumnDef } from "@tanstack/react-table";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/modules/page-header";
 import { EmptyState } from "@/components/modules/empty-state";
@@ -11,14 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { DataTable } from "@/components/ui/data-table";
 import {
   Dialog,
   DialogContent,
@@ -34,12 +28,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SalaryDetail, type SalaryStructureRow } from "@/components/payroll/salary-detail";
+import { hasPermission } from "@/lib/client-permissions";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 type AllowanceRow = { name: string; amount: string };
 
-export function SalariesClient() {
+export function SalariesClient({ permissions }: { permissions?: Set<string> }) {
   const { data, mutate } = useSWR("/api/payroll/salaries", fetcher);
   const { data: empData } = useSWR("/api/hr/employees", fetcher);
   const [open, setOpen] = useState(false);
@@ -49,6 +45,8 @@ export function SalariesClient() {
     { name: "Housing", amount: "" },
     { name: "Transport", amount: "" },
   ]);
+  const [selected, setSelected] = useState<SalaryStructureRow | null>(null);
+  const canEdit = hasPermission(permissions, "payroll.configure");
 
   const structures = data?.structures ?? [];
   const employees = (empData?.employees ?? []).filter((e: Record<string, any>) => e.isActive);
@@ -98,10 +96,90 @@ export function SalariesClient() {
     }
   }
 
-  const totalIncome = (s: Record<string, any>) => {
+  const totalIncome = (s: SalaryStructureRow) => {
     const allowances = (s.allowances ?? {}) as Record<string, number>;
     return Number(s.basicSalary) + Object.values(allowances).reduce((a, b) => a + Number(b), 0);
   };
+
+  const columns: ColumnDef<SalaryStructureRow>[] = [
+    {
+      accessorFn: (s) => `${s.employee.firstName} ${s.employee.lastName}`,
+      id: "employee",
+      header: "Employee",
+      cell: ({ row }) => (
+        <span className="font-medium">
+          {row.original.employee.firstName} {row.original.employee.lastName}
+        </span>
+      ),
+    },
+    {
+      accessorFn: (s) => Number(s.basicSalary),
+      id: "basic",
+      header: "Basic",
+      meta: { headerClassName: "text-right", cellClassName: "text-right" },
+      cell: ({ row }) => <span>{Number(row.original.basicSalary).toLocaleString()}</span>,
+    },
+    {
+      accessorFn: (s) =>
+        Object.keys(s.allowances ?? {}).length
+          ? Object.entries(s.allowances ?? {})
+              .map(([name, amount]) => `${name}: ${Number(amount).toLocaleString()}`)
+              .join(", ")
+          : "",
+      id: "allowances",
+      header: "Allowances",
+      cell: ({ row }) => {
+        const a = row.original.allowances ?? {};
+        return Object.keys(a).length
+          ? Object.entries(a)
+              .map(([name, amount]) => `${name}: ${Number(amount).toLocaleString()}`)
+              .join(", ")
+          : "—";
+      },
+    },
+    {
+      accessorFn: (s) => totalIncome(s),
+      id: "total",
+      header: "Total income",
+      meta: { headerClassName: "text-right", cellClassName: "text-right" },
+      cell: ({ row }) => <span className="font-medium">{totalIncome(row.original).toLocaleString()}</span>,
+    },
+    {
+      accessorFn: (s) => new Date(s.effectiveFrom).getTime(),
+      id: "effectiveFrom",
+      header: "Effective from",
+      cell: ({ row }) => <span>{new Date(row.original.effectiveFrom).toLocaleDateString()}</span>,
+    },
+    {
+      accessorFn: (s) => (s.isActive ? "Active" : "Historic"),
+      id: "status",
+      header: "Status",
+      cell: ({ row }) => (
+        <Badge variant={row.original.isActive ? "success" : "outline"}>
+          {row.original.isActive ? "Active" : "Historic"}
+        </Badge>
+      ),
+    },
+    {
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      size: 44,
+      meta: { headerClassName: "text-right", cellClassName: "text-right" },
+      cell: ({ row }) => (
+        <div className="flex justify-end">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => setSelected(row.original)}
+          >
+            <Eye className="h-4 w-4" />
+          </Button>
+        </div>
+      ),
+    },
+  ];
 
   return (
     <div>
@@ -122,43 +200,15 @@ export function SalariesClient() {
           }
         />
       ) : (
-        <Card className="overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Employee</TableHead>
-                <TableHead>Basic</TableHead>
-                <TableHead>Allowances</TableHead>
-                <TableHead>Total income</TableHead>
-                <TableHead>Effective from</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {structures.map((s: Record<string, any>) => (
-                <TableRow key={s.id}>
-                  <TableCell className="font-medium">
-                    {s.employee.firstName} {s.employee.lastName}
-                  </TableCell>
-                  <TableCell>{Number(s.basicSalary).toLocaleString()}</TableCell>
-                  <TableCell>
-                    {Object.keys(s.allowances ?? {}).length
-                      ? Object.entries(s.allowances as Record<string, number>)
-                          .map(([name, amount]) => `${name}: ${Number(amount).toLocaleString()}`)
-                          .join(", ")
-                      : "—"}
-                  </TableCell>
-                  <TableCell className="font-medium">{totalIncome(s).toLocaleString()}</TableCell>
-                  <TableCell>{new Date(s.effectiveFrom).toLocaleDateString()}</TableCell>
-                  <TableCell>
-                    <Badge variant={s.isActive ? "success" : "outline"}>
-                      {s.isActive ? "Active" : "Historic"}
-                    </Badge>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+        <Card className="overflow-hidden p-2">
+          <DataTable
+            columns={columns}
+            data={structures as SalaryStructureRow[]}
+            filterKeys={["employee.firstName", "employee.lastName"]}
+            searchPlaceholder="Search salary structures…"
+            emptyMessage="No salary structures match your search"
+            pageSize={10}
+          />
         </Card>
       )}
 
@@ -232,6 +282,17 @@ export function SalariesClient() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <SalaryDetail
+        open={!!selected}
+        onOpenChange={(o) => !o && setSelected(null)}
+        structure={selected}
+        canEdit={canEdit}
+        onUpdated={(updated) => {
+          mutate();
+          if (updated) setSelected((prev) => ({ ...prev, ...updated }));
+        }}
+      />
     </div>
   );
 }

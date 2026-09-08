@@ -3,6 +3,7 @@
 import useSWR from "swr";
 import { useState } from "react";
 import { Plus } from "lucide-react";
+import type { ColumnDef } from "@tanstack/react-table";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/modules/page-header";
 import { EmptyState } from "@/components/modules/empty-state";
@@ -11,14 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { DataTable } from "@/components/ui/data-table";
 import {
   Dialog,
   DialogContent,
@@ -43,6 +37,18 @@ const badgeVariant: Record<string, "warning" | "success" | "destructive" | "info
   half_day: "warning",
 };
 
+type AttendanceRow = {
+  id: string;
+  date: string;
+  checkIn: string | null;
+  checkOut: string | null;
+  hoursWorked: number | null;
+  status: string;
+  employee: { firstName: string; lastName: string };
+};
+
+const TIME_FORMAT: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit" };
+
 export function AttendanceClient() {
   const { data, mutate } = useSWR("/api/hr/attendance", fetcher);
   const { data: empData } = useSWR("/api/hr/employees", fetcher);
@@ -53,6 +59,69 @@ export function AttendanceClient() {
 
   const attendances = data?.attendances ?? [];
   const employees = empData?.employees ?? [];
+
+  const columns: ColumnDef<AttendanceRow>[] = [
+    {
+      accessorFn: (a) => `${a.employee.firstName} ${a.employee.lastName}`,
+      id: "employee",
+      header: "Employee",
+      cell: ({ row }) => (
+        <span className="font-medium">
+          {row.original.employee.firstName} {row.original.employee.lastName}
+        </span>
+      ),
+    },
+    {
+      accessorFn: (a) => new Date(a.date).getTime(),
+      id: "date",
+      header: "Date",
+      cell: ({ row }) => <span>{new Date(row.original.date).toLocaleDateString()}</span>,
+    },
+    {
+      accessorFn: (a) => (a.checkIn ? new Date(a.checkIn).getTime() : null),
+      id: "checkIn",
+      header: "Check in",
+      cell: ({ row }) => (
+        <span>
+          {row.original.checkIn
+            ? new Date(row.original.checkIn).toLocaleTimeString([], TIME_FORMAT)
+            : "—"}
+        </span>
+      ),
+    },
+    {
+      accessorFn: (a) => (a.checkOut ? new Date(a.checkOut).getTime() : null),
+      id: "checkOut",
+      header: "Check out",
+      cell: ({ row }) => (
+        <span>
+          {row.original.checkOut
+            ? new Date(row.original.checkOut).toLocaleTimeString([], TIME_FORMAT)
+            : "—"}
+        </span>
+      ),
+    },
+    {
+      accessorFn: (a) => (a.hoursWorked ? Number(a.hoursWorked) : null),
+      id: "hours",
+      header: "Hours",
+      cell: ({ row }) => (
+        <span>
+          {row.original.hoursWorked ? `${Number(row.original.hoursWorked).toFixed(1)}h` : "—"}
+        </span>
+      ),
+    },
+    {
+      accessorFn: (a) => a.status,
+      id: "status",
+      header: "Status",
+      cell: ({ row }) => (
+        <Badge variant={badgeVariant[row.original.status] ?? "outline"}>
+          {row.original.status.replace("_", " ")}
+        </Badge>
+      ),
+    },
+  ];
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -100,39 +169,15 @@ export function AttendanceClient() {
           }
         />
       ) : (
-        <Card className="overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Employee</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead>Check in</TableHead>
-                <TableHead>Check out</TableHead>
-                <TableHead>Hours</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {attendances.map((a: Record<string, any>) => (
-                <TableRow key={a.id}>
-                  <TableCell className="font-medium">
-                    {a.employee.firstName} {a.employee.lastName}
-                  </TableCell>
-                  <TableCell>{new Date(a.date).toLocaleDateString()}</TableCell>
-                  <TableCell>
-                    {a.checkIn ? new Date(a.checkIn).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"}
-                  </TableCell>
-                  <TableCell>
-                    {a.checkOut ? new Date(a.checkOut).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"}
-                  </TableCell>
-                  <TableCell>{a.hoursWorked ? `${Number(a.hoursWorked).toFixed(1)}h` : "—"}</TableCell>
-                  <TableCell>
-                    <Badge variant={badgeVariant[a.status] ?? "outline"}>{a.status.replace("_", " ")}</Badge>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+        <Card className="overflow-hidden p-2">
+          <DataTable
+            columns={columns}
+            data={attendances as AttendanceRow[]}
+            filterKeys={["employee.firstName", "employee.lastName", "status"]}
+            searchPlaceholder="Search attendance…"
+            emptyMessage="No attendance records match your search"
+            pageSize={25}
+          />
         </Card>
       )}
 

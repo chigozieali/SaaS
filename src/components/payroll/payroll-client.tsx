@@ -3,6 +3,7 @@
 import useSWR from "swr";
 import { useState } from "react";
 import { CalendarPlus, RefreshCw, Send, CheckCheck, Lock, BookOpenCheck } from "lucide-react";
+import type { ColumnDef } from "@tanstack/react-table";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/modules/page-header";
 import { EmptyState } from "@/components/modules/empty-state";
@@ -11,14 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { DataTable } from "@/components/ui/data-table";
 import {
   Dialog,
   DialogContent,
@@ -44,6 +38,24 @@ const flow: Record<string, string[]> = {
   approved: ["finalize"],
   finalized: ["post"],
   posted: [],
+};
+
+type PayrollRunRow = {
+  id: string;
+  status: string;
+  _count: { lines: number };
+  lines: { netPay: number }[];
+  period: { name: string; startDate: string; endDate: string };
+};
+
+type PayrollPeriodRow = {
+  id: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  payDate: string | null;
+  status: string;
+  _count: { runs: number };
 };
 
 export function PayrollClient() {
@@ -124,6 +136,141 @@ export function PayrollClient() {
     post: { label: "Post to GL", icon: <BookOpenCheck className="h-4 w-4" />, action: "post", variant: "outline" },
   };
 
+  const runColumns: ColumnDef<PayrollRunRow>[] = [
+    {
+      accessorFn: (run) => run.period.name,
+      id: "period",
+      header: "Period",
+      cell: ({ row }) => <span className="font-medium">{row.original.period.name}</span>,
+    },
+    {
+      accessorFn: (run) => new Date(run.period.startDate).getTime(),
+      id: "dateRange",
+      header: "Date range",
+      cell: ({ row }) => (
+        <span className="text-muted-foreground">
+          {new Date(row.original.period.startDate).toLocaleDateString()} –{" "}
+          {new Date(row.original.period.endDate).toLocaleDateString()}
+        </span>
+      ),
+    },
+    {
+      accessorFn: (run) => run._count.lines,
+      id: "employees",
+      header: "Employees",
+    },
+    {
+      accessorFn: (run) =>
+        run.lines.length > 0 && !run.lines.some((l) => Number(l.netPay) === 0)
+          ? run.lines.reduce((s, l) => s + Number(l.netPay), 0)
+          : 0,
+      id: "netPay",
+      header: "Net pay",
+      meta: { headerClassName: "text-right", cellClassName: "text-right" },
+      cell: ({ row }) => {
+        const { lines } = row.original;
+        return lines.length > 0 && !lines.some((l) => Number(l.netPay) === 0)
+          ? lines.reduce((s, l) => s + Number(l.netPay), 0).toLocaleString()
+          : "—";
+      },
+    },
+    {
+      accessorFn: (run) => run.status,
+      id: "status",
+      header: "Status",
+      cell: ({ row }) => (
+        <Badge variant={badgeVariant[row.original.status] ?? "outline"}>
+          {row.original.status}
+        </Badge>
+      ),
+    },
+    {
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      meta: { headerClassName: "text-right", cellClassName: "text-right" },
+      cell: ({ row }) => {
+        const run = row.original;
+        return (
+          <div className="flex justify-end gap-1">
+            {run.status === "draft" && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7"
+                disabled={busyId === run.id}
+                onClick={() => compute(run.id)}
+              >
+                <RefreshCw className={`h-3 w-3 ${busyId === run.id ? "animate-spin" : ""}`} />
+                Calculate
+              </Button>
+            )}
+            {(flow[run.status] ?? []).map((action) => {
+              const a = actions[action];
+              return (
+                <Button
+                  key={action}
+                  size="sm"
+                  variant={a.variant ?? "default"}
+                  className="h-7"
+                  disabled={busyId === run.id}
+                  onClick={() => act(run.id, action)}
+                >
+                  {a.icon} {busyId === run.id && action === run.status ? "…" : a.label}
+                </Button>
+              );
+            })}
+          </div>
+        );
+      },
+    },
+  ];
+
+  const periodColumns: ColumnDef<PayrollPeriodRow>[] = [
+    {
+      accessorFn: (p) => p.name,
+      id: "name",
+      header: "Name",
+      cell: ({ row }) => <span className="font-medium">{row.original.name}</span>,
+    },
+    {
+      accessorFn: (p) => new Date(p.startDate).getTime(),
+      id: "start",
+      header: "Start",
+      cell: ({ row }) => <span>{new Date(row.original.startDate).toLocaleDateString()}</span>,
+    },
+    {
+      accessorFn: (p) => new Date(p.endDate).getTime(),
+      id: "end",
+      header: "End",
+      cell: ({ row }) => <span>{new Date(row.original.endDate).toLocaleDateString()}</span>,
+    },
+    {
+      accessorFn: (p) => (p.payDate ? new Date(p.payDate).getTime() : null),
+      id: "payDate",
+      header: "Pay date",
+      cell: ({ row }) =>
+        row.original.payDate ? (
+          <span>{new Date(row.original.payDate).toLocaleDateString()}</span>
+        ) : (
+          <span>—</span>
+        ),
+    },
+    {
+      accessorFn: (p) => p.status,
+      id: "status",
+      header: "Status",
+      cell: ({ row }) => <Badge variant="secondary">{row.original.status}</Badge>,
+    },
+    {
+      accessorFn: (p) => p._count.runs,
+      id: "runs",
+      header: "Runs",
+      meta: { headerClassName: "text-right", cellClassName: "text-right" },
+      cell: ({ row }) => <span>{row.original._count.runs}</span>,
+    },
+  ];
+
   return (
     <div>
       <PageHeader title="Payroll" description="Run, review and approve payroll cycles.">
@@ -149,102 +296,28 @@ export function PayrollClient() {
           }
         />
       ) : (
-        <Card className="overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Period</TableHead>
-                <TableHead>Date range</TableHead>
-                <TableHead>Employees</TableHead>
-                <TableHead className="text-right">Net pay</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {runs.map((run: Record<string, any>) => (
-                <TableRow key={run.id}>
-                  <TableCell className="font-medium">{run.period.name}</TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {new Date(run.period.startDate).toLocaleDateString()} – {new Date(run.period.endDate).toLocaleDateString()}
-                  </TableCell>
-                  <TableCell>{run._count.lines}</TableCell>
-                  <TableCell className="text-right">
-                    {run.lines.length > 0 && !run.lines.some((l: any) => l.netPay === 0)
-                      ? `${run.lines.reduce((s: number, l: any) => s + Number(l.netPay), 0).toLocaleString()}`
-                      : "—"}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={badgeVariant[run.status] ?? "outline"}>{run.status}</Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-1">
-                      {run.status === "draft" && (
-                        <Button size="sm" variant="outline" className="h-7" disabled={busyId === run.id} onClick={() => compute(run.id)}>
-                          {busyId === run.id ? <RefreshCw className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-                          Calculate
-                        </Button>
-                      )}
-                      {(flow[run.status] ?? []).map((action) => {
-                        const a = actions[action];
-                        return (
-                          <Button
-                            key={action}
-                            size="sm"
-                            variant={a.variant ?? "default"}
-                            className="h-7"
-                            disabled={busyId === run.id}
-                            onClick={() => act(run.id, action)}
-                          >
-                            {a.icon} {busyId === run.id && action === run.status ? "…" : a.label}
-                          </Button>
-                        );
-                      })}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+        <Card className="overflow-hidden p-2">
+          <DataTable
+            columns={runColumns}
+            data={runs as PayrollRunRow[]}
+            filterKeys={["period.name", "status"]}
+            searchPlaceholder="Search payroll runs…"
+            emptyMessage="No payroll runs match your search"
+            pageSize={10}
+          />
         </Card>
       )}
 
       <h2 className="mt-8 mb-3 text-lg font-semibold">Payroll periods</h2>
-      <Card className="overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Start</TableHead>
-              <TableHead>End</TableHead>
-              <TableHead>Pay date</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Runs</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {periods.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
-                  No periods yet.
-                </TableCell>
-              </TableRow>
-            ) : (
-              periods.map((p: Record<string, any>) => (
-                <TableRow key={p.id}>
-                  <TableCell className="font-medium">{p.name}</TableCell>
-                  <TableCell>{new Date(p.startDate).toLocaleDateString()}</TableCell>
-                  <TableCell>{new Date(p.endDate).toLocaleDateString()}</TableCell>
-                  <TableCell>{p.payDate ? new Date(p.payDate).toLocaleDateString() : "—"}</TableCell>
-                  <TableCell>
-                    <Badge variant="secondary">{p.status}</Badge>
-                  </TableCell>
-                  <TableCell className="text-right">{p._count.runs}</TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+      <Card className="overflow-hidden p-2">
+        <DataTable
+          columns={periodColumns}
+          data={periods as PayrollPeriodRow[]}
+          filterKeys={["name", "status"]}
+          searchPlaceholder="Search periods…"
+          emptyMessage="No periods yet."
+          pageSize={10}
+        />
       </Card>
 
       <Dialog open={periodOpen} onOpenChange={setPeriodOpen}>

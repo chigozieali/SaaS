@@ -3,6 +3,7 @@
 import useSWR from "swr";
 import { useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
+import type { ColumnDef } from "@tanstack/react-table";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/modules/page-header";
 import { EmptyState } from "@/components/modules/empty-state";
@@ -10,14 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { DataTable } from "@/components/ui/data-table";
 import {
   Dialog,
   DialogContent,
@@ -37,6 +31,60 @@ import {
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 type Line = { accountCode: string; description: string; debit: string; credit: string };
+
+type JournalLineRow = {
+  id: string;
+  description: string | null;
+  debit: number;
+  credit: number;
+  account: { code: string; name: string };
+};
+
+const lineColumns: ColumnDef<JournalLineRow>[] = [
+  {
+    accessorFn: (l) => `${l.account.code} ${l.account.name}`,
+    id: "account",
+    header: "Account",
+    cell: ({ row }) => (
+      <span>
+        <span className="font-mono text-xs">{row.original.account.code}</span> ·{" "}
+        {row.original.account.name}
+      </span>
+    ),
+  },
+  {
+    accessorFn: (l) => l.description ?? "",
+    id: "description",
+    header: "Description",
+    cell: ({ row }) => (
+      <span className="text-muted-foreground">{row.original.description ?? "—"}</span>
+    ),
+  },
+  {
+    accessorFn: (l) => Number(l.debit),
+    id: "debit",
+    header: "Debit",
+    meta: { headerClassName: "text-right", cellClassName: "text-right" },
+    cell: ({ row }) =>
+      Number(row.original.debit) ? (
+        <span>{Number(row.original.debit).toLocaleString()}</span>
+      ) : (
+        <span>—</span>
+      ),
+  },
+  {
+    accessorFn: (l) => Number(l.credit),
+    id: "credit",
+    header: "Credit",
+    meta: { headerClassName: "text-right", cellClassName: "text-right" },
+    cell: ({ row }) =>
+      Number(row.original.credit) ? (
+        <span>{Number(row.original.credit).toLocaleString()}</span>
+      ) : (
+        <span>—</span>
+      ),
+  },
+];
 
 export function JournalClient() {
   const { data, mutate } = useSWR("/api/accounting/journal", fetcher);
@@ -128,28 +176,12 @@ export function JournalClient() {
                     <p>Cr {credit.toLocaleString()}</p>
                   </div>
                 </div>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Account</TableHead>
-                      <TableHead>Description</TableHead>
-                      <TableHead className="text-right">Debit</TableHead>
-                      <TableHead className="text-right">Credit</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {entry.lines.map((l: Record<string, any>) => (
-                      <TableRow key={l.id}>
-                        <TableCell>
-                          <span className="font-mono text-xs">{l.account.code}</span> · {l.account.name}
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">{l.description ?? "—"}</TableCell>
-                        <TableCell className="text-right">{Number(l.debit) ? Number(l.debit).toLocaleString() : "—"}</TableCell>
-                        <TableCell className="text-right">{Number(l.credit) ? Number(l.credit).toLocaleString() : "—"}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                <DataTable
+                  columns={lineColumns}
+                  data={(entry.lines ?? []) as JournalLineRow[]}
+                  dense
+                  paginated={false}
+                />
               </Card>
             );
           })}

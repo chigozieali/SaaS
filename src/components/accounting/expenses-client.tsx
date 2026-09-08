@@ -3,6 +3,7 @@
 import useSWR from "swr";
 import { useState } from "react";
 import { Plus } from "lucide-react";
+import type { ColumnDef } from "@tanstack/react-table";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/modules/page-header";
 import { EmptyState } from "@/components/modules/empty-state";
@@ -11,14 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { DataTable } from "@/components/ui/data-table";
 import {
   Dialog,
   DialogContent,
@@ -43,6 +37,16 @@ const badgeVariant: Record<string, "warning" | "success" | "destructive" | "info
   cancelled: "outline",
 };
 
+type ExpenseRow = {
+  id: string;
+  date: string;
+  description: string | null;
+  amount: number;
+  status: string;
+  category?: { name: string } | null;
+  vendor?: { name: string } | null;
+};
+
 export function ExpensesClient() {
   const { data, mutate } = useSWR("/api/accounting/expenses", fetcher);
   const { data: vendorData } = useSWR("/api/accounting/vendors", fetcher);
@@ -54,6 +58,77 @@ export function ExpensesClient() {
   const expenses = data?.expenses ?? [];
   const categories = data?.categories ?? [];
   const vendors = vendorData?.vendors ?? [];
+
+  const columns: ColumnDef<ExpenseRow>[] = [
+    {
+      accessorFn: (e) => new Date(e.date).getTime(),
+      id: "date",
+      header: "Date",
+      cell: ({ row }) => <span>{new Date(row.original.date).toLocaleDateString()}</span>,
+    },
+    {
+      accessorFn: (e) => e.description ?? "",
+      id: "description",
+      header: "Description",
+      cell: ({ row }) => <span className="font-medium">{row.original.description ?? "—"}</span>,
+    },
+    {
+      accessorFn: (e) => e.category?.name ?? "",
+      id: "category",
+      header: "Category",
+      cell: ({ row }) => <span>{row.original.category?.name ?? "—"}</span>,
+    },
+    {
+      accessorFn: (e) => e.vendor?.name ?? "",
+      id: "vendor",
+      header: "Vendor",
+      cell: ({ row }) => <span>{row.original.vendor?.name ?? "—"}</span>,
+    },
+    {
+      accessorFn: (e) => Number(e.amount),
+      id: "amount",
+      header: "Amount",
+      meta: { headerClassName: "text-right", cellClassName: "text-right" },
+      cell: ({ row }) => <span>{Number(row.original.amount).toLocaleString()}</span>,
+    },
+    {
+      accessorFn: (e) => e.status,
+      id: "status",
+      header: "Status",
+      cell: ({ row }) => (
+        <Badge variant={badgeVariant[row.original.status] ?? "outline"}>
+          {row.original.status}
+        </Badge>
+      ),
+    },
+    {
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      meta: { headerClassName: "text-right", cellClassName: "text-right" },
+      cell: ({ row }) =>
+        row.original.status === "pending" ? (
+          <div className="flex justify-end gap-1">
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7"
+              onClick={() => decide(row.original.id, "approved")}
+            >
+              Approve
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7"
+              onClick={() => decide(row.original.id, "rejected")}
+            >
+              Reject
+            </Button>
+          </div>
+        ) : null,
+    },
+  ];
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -132,46 +207,15 @@ export function ExpensesClient() {
           }
         />
       ) : (
-        <Card className="overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Date</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead>Category</TableHead>
-                <TableHead>Vendor</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Action</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {expenses.map((e: Record<string, any>) => (
-                <TableRow key={e.id}>
-                  <TableCell>{new Date(e.date).toLocaleDateString()}</TableCell>
-                  <TableCell className="font-medium">{e.description ?? "—"}</TableCell>
-                  <TableCell>{e.category?.name ?? "—"}</TableCell>
-                  <TableCell>{e.vendor?.name ?? "—"}</TableCell>
-                  <TableCell className="text-right">{Number(e.amount).toLocaleString()}</TableCell>
-                  <TableCell>
-                    <Badge variant={badgeVariant[e.status] ?? "outline"}>{e.status}</Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {e.status === "pending" && (
-                      <div className="flex justify-end gap-1">
-                        <Button size="sm" variant="outline" className="h-7" onClick={() => decide(e.id, "approved")}>
-                          Approve
-                        </Button>
-                        <Button size="sm" variant="ghost" className="h-7" onClick={() => decide(e.id, "rejected")}>
-                          Reject
-                        </Button>
-                      </div>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+        <Card className="overflow-hidden p-2">
+          <DataTable
+            columns={columns}
+            data={expenses as ExpenseRow[]}
+            filterKeys={["description", "category.name", "vendor.name", "status"]}
+            searchPlaceholder="Search expenses…"
+            emptyMessage="No expenses match your search"
+            pageSize={10}
+          />
         </Card>
       )}
 

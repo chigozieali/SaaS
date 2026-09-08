@@ -37,6 +37,7 @@ const updateSchema = z.object({
   managerId: z.string().optional().nullable(),
   status: z.string().optional(),
   employmentType: z.string().optional(),
+  hireDate: z.string().nullable().optional(),
   bankName: z.string().optional(),
   bankAccountNumber: z.string().optional(),
   bankAccountName: z.string().optional(),
@@ -75,11 +76,18 @@ export async function PATCH(
       ...(data.managerId !== undefined ? { managerId: data.managerId || null } : {}),
       ...(data.status ? { status: data.status, isActive: data.status !== "terminated" } : {}),
       ...(data.employmentType ? { employmentType: data.employmentType } : {}),
+      ...(data.hireDate !== undefined ? { hireDate: data.hireDate ? new Date(data.hireDate) : null } : {}),
       ...(data.bankName !== undefined ? { bankName: data.bankName || null } : {}),
       ...(data.bankAccountNumber !== undefined ? { bankAccountNumber: data.bankAccountNumber || null } : {}),
       ...(data.bankAccountName !== undefined ? { bankAccountName: data.bankAccountName || null } : {}),
       ...(data.tin !== undefined ? { tin: data.tin || null } : {}),
       ...(data.ssn !== undefined ? { ssn: data.ssn || null } : {}),
+    },
+    include: {
+      department: true,
+      position: true,
+      manager: { select: { id: true, firstName: true, lastName: true } },
+      salaryStructures: { where: { isActive: true }, take: 1 },
     },
   });
 

@@ -3,6 +3,7 @@
 import useSWR from "swr";
 import { useState } from "react";
 import { Plus } from "lucide-react";
+import type { ColumnDef } from "@tanstack/react-table";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/modules/page-header";
 import { EmptyState } from "@/components/modules/empty-state";
@@ -10,14 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { DataTable } from "@/components/ui/data-table";
 import {
   Dialog,
   DialogContent,
@@ -35,6 +29,33 @@ import {
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 const types = ["asset", "liability", "equity", "revenue", "expense"] as const;
+
+type AccountRow = {
+  id: string;
+  code: string;
+  name: string;
+  parent?: { name: string } | null;
+};
+
+const accountColumns: ColumnDef<AccountRow>[] = [
+  {
+    accessorKey: "code",
+    header: "Code",
+    cell: ({ row }) => <span className="font-mono text-xs">{row.original.code}</span>,
+  },
+  {
+    accessorKey: "name",
+    header: "Name",
+    cell: ({ row }) => (
+      <span>
+        {row.original.name}
+        {row.original.parent ? (
+          <span className="ml-1 text-xs text-muted-foreground">· {row.original.parent.name}</span>
+        ) : null}
+      </span>
+    ),
+  },
+];
 
 export function ChartOfAccountsClient() {
   const { data, mutate } = useSWR("/api/accounting/accounts", fetcher);
@@ -98,31 +119,16 @@ export function ChartOfAccountsClient() {
       ) : (
         <div className="grid gap-6 lg:grid-cols-2">
           {grouped.map(({ type: t, accounts: list }) => (
-            <Card key={t} className="overflow-hidden">
-              <div className="border-b px-6 py-3 font-semibold capitalize">{t}</div>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-24">Code</TableHead>
-                    <TableHead>Name</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {list.map((a: Record<string, any>) => (
-                    <TableRow key={a.id}>
-                      <TableCell className="font-mono text-xs">{a.code}</TableCell>
-                      <TableCell>
-                        {a.name}
-                        {a.parent && (
-                          <span className="ml-1 text-xs text-muted-foreground">
-                            · {a.parent.name}
-                          </span>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+            <Card key={t} className="overflow-hidden p-2">
+              <div className="mb-2 px-4 pt-2 font-semibold capitalize">{t}</div>
+              <DataTable
+                columns={accountColumns}
+                data={list as AccountRow[]}
+                filterKeys={["code", "name", "parent.name"]}
+                searchPlaceholder={`Search ${t} accounts…`}
+                emptyMessage={`No ${t} accounts match your search`}
+                pageSize={10}
+              />
             </Card>
           ))}
         </div>

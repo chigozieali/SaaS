@@ -3,6 +3,7 @@
 import useSWR from "swr";
 import { useState } from "react";
 import { Plus } from "lucide-react";
+import type { ColumnDef } from "@tanstack/react-table";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/modules/page-header";
 import { EmptyState } from "@/components/modules/empty-state";
@@ -11,14 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { DataTable } from "@/components/ui/data-table";
 import {
   Dialog,
   DialogContent,
@@ -41,6 +35,16 @@ const badgeVariant: Record<string, "warning" | "success" | "destructive" | "info
   approved: "success",
   rejected: "destructive",
   cancelled: "outline",
+};
+
+type LeaveRow = {
+  id: string;
+  startDate: string;
+  endDate: string;
+  days: number;
+  status: string;
+  employee: { firstName: string; lastName: string };
+  leaveType: { name: string };
 };
 
 export function LeaveClient() {
@@ -103,6 +107,79 @@ export function LeaveClient() {
     }
   }
 
+  const columns: ColumnDef<LeaveRow>[] = [
+    {
+      accessorFn: (l) => `${l.employee.firstName} ${l.employee.lastName}`,
+      id: "employee",
+      header: "Employee",
+      cell: ({ row }) => (
+        <span className="font-medium">
+          {row.original.employee.firstName} {row.original.employee.lastName}
+        </span>
+      ),
+    },
+    {
+      accessorFn: (l) => l.leaveType.name,
+      id: "type",
+      header: "Type",
+      cell: ({ row }) => <span>{row.original.leaveType.name}</span>,
+    },
+    {
+      accessorFn: (l) => new Date(l.startDate).getTime(),
+      id: "start",
+      header: "Start",
+      cell: ({ row }) => <span>{new Date(row.original.startDate).toLocaleDateString()}</span>,
+    },
+    {
+      accessorFn: (l) => new Date(l.endDate).getTime(),
+      id: "end",
+      header: "End",
+      cell: ({ row }) => <span>{new Date(row.original.endDate).toLocaleDateString()}</span>,
+    },
+    {
+      accessorFn: (l) => Number(l.days),
+      id: "days",
+      header: "Days",
+    },
+    {
+      accessorFn: (l) => l.status,
+      id: "status",
+      header: "Status",
+      cell: ({ row }) => (
+        <Badge variant={badgeVariant[row.original.status] ?? "outline"}>
+          {row.original.status}
+        </Badge>
+      ),
+    },
+    {
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      meta: { headerClassName: "text-right", cellClassName: "text-right" },
+      cell: ({ row }) =>
+        row.original.status === "pending" ? (
+          <div className="flex justify-end gap-1">
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7"
+              onClick={() => decide(row.original.id, "approved")}
+            >
+              Approve
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7"
+              onClick={() => decide(row.original.id, "rejected")}
+            >
+              Reject
+            </Button>
+          </div>
+        ) : null,
+    },
+  ];
+
   return (
     <div>
       <PageHeader title="Leave Management" description="Track and approve leave requests.">
@@ -122,48 +199,15 @@ export function LeaveClient() {
           }
         />
       ) : (
-        <Card className="overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Employee</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Start</TableHead>
-                <TableHead>End</TableHead>
-                <TableHead>Days</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Action</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {leaves.map((l: Record<string, any>) => (
-                <TableRow key={l.id}>
-                  <TableCell className="font-medium">
-                    {l.employee.firstName} {l.employee.lastName}
-                  </TableCell>
-                  <TableCell>{l.leaveType.name}</TableCell>
-                  <TableCell>{new Date(l.startDate).toLocaleDateString()}</TableCell>
-                  <TableCell>{new Date(l.endDate).toLocaleDateString()}</TableCell>
-                  <TableCell>{Number(l.days)}</TableCell>
-                  <TableCell>
-                    <Badge variant={badgeVariant[l.status] ?? "outline"}>{l.status}</Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {l.status === "pending" && (
-                      <div className="flex justify-end gap-1">
-                        <Button size="sm" variant="outline" className="h-7" onClick={() => decide(l.id, "approved")}>
-                          Approve
-                        </Button>
-                        <Button size="sm" variant="ghost" className="h-7" onClick={() => decide(l.id, "rejected")}>
-                          Reject
-                        </Button>
-                      </div>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+        <Card className="overflow-hidden p-2">
+          <DataTable
+            columns={columns}
+            data={leaves as LeaveRow[]}
+            filterKeys={["employee.firstName", "employee.lastName", "leaveType.name", "status"]}
+            searchPlaceholder="Search leave requests…"
+            emptyMessage="No leave requests match your search"
+            pageSize={10}
+          />
         </Card>
       )}
 

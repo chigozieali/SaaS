@@ -5,10 +5,10 @@ import { InvoicesClient } from "@/components/accounting/invoices-client";
 export const dynamic = "force-dynamic";
 
 export default async function InvoicesPage() {
-  await requireOrg("accounting.invoices");
+  const ctx = await requireOrg("accounting.invoices");
   return (
     <AppShell>
-      <InvoicesClient />
+      <InvoicesClient permissions={ctx.permissions} />
     </AppShell>
   );
 }

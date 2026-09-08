@@ -2,7 +2,8 @@
 
 import useSWR from "swr";
 import { useState } from "react";
-import { Plus, Trash2, Banknote } from "lucide-react";
+import { Plus, Trash2, Banknote, Eye } from "lucide-react";
+import type { ColumnDef } from "@tanstack/react-table";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/modules/page-header";
 import { EmptyState } from "@/components/modules/empty-state";
@@ -11,14 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { DataTable } from "@/components/ui/data-table";
 import {
   Dialog,
   DialogContent,
@@ -34,6 +28,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { BillDetail, type BillRow } from "@/components/accounting/bill-detail";
+import { hasPermission } from "@/lib/client-permissions";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 const badgeVariant: Record<string, "warning" | "success" | "destructive" | "info" | "outline"> = {
@@ -46,7 +42,7 @@ const badgeVariant: Record<string, "warning" | "success" | "destructive" | "info
 
 type Item = { description: string; quantity: string; unitPrice: string };
 
-export function BillsClient() {
+export function BillsClient({ permissions }: { permissions?: Set<string> }) {
   const { data, mutate } = useSWR("/api/accounting/bills", fetcher);
   const { data: vendorData } = useSWR("/api/accounting/vendors", fetcher);
   const [createOpen, setCreateOpen] = useState(false);
@@ -55,9 +51,89 @@ export function BillsClient() {
   const [saving, setSaving] = useState(false);
   const [vendorId, setVendorId] = useState("");
   const [items, setItems] = useState<Item[]>([{ description: "", quantity: "1", unitPrice: "" }]);
+  const [selected, setSelected] = useState<BillRow | null>(null);
+  const canEdit = hasPermission(permissions, "accounting.bills");
 
   const bills = data?.bills ?? [];
   const vendors = vendorData?.vendors ?? [];
+
+  const paidAmount = (bill: BillRow) =>
+    bill.payments.reduce((s, p) => s + Number(p.amount), 0);
+
+  const columns: ColumnDef<BillRow>[] = [
+    {
+      accessorKey: "billNumber",
+      header: "Number",
+      cell: ({ row }) => <span className="font-mono text-xs">{row.original.billNumber}</span>,
+    },
+    {
+      accessorFn: (bill) => bill.vendor.name,
+      id: "vendor",
+      header: "Vendor",
+      cell: ({ row }) => <span className="font-medium">{row.original.vendor.name}</span>,
+    },
+    {
+      accessorFn: (bill) => new Date(bill.issueDate).getTime(),
+      id: "issueDate",
+      header: "Issue date",
+      cell: ({ row }) => <span>{new Date(row.original.issueDate).toLocaleDateString()}</span>,
+    },
+    {
+      accessorFn: (bill) => Number(bill.total),
+      id: "total",
+      header: "Total",
+      meta: { headerClassName: "text-right", cellClassName: "text-right" },
+      cell: ({ row }) => <span>{Number(row.original.total).toLocaleString()}</span>,
+    },
+    {
+      accessorFn: (bill) => paidAmount(bill),
+      id: "paid",
+      header: "Paid",
+      meta: { headerClassName: "text-right", cellClassName: "text-right" },
+      cell: ({ row }) => <span>{paidAmount(row.original).toLocaleString()}</span>,
+    },
+    {
+      accessorFn: (bill) => bill.status,
+      id: "status",
+      header: "Status",
+      cell: ({ row }) => (
+        <Badge variant={badgeVariant[row.original.status] ?? "outline"}>
+          {row.original.status}
+        </Badge>
+      ),
+    },
+    {
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      meta: { headerClassName: "text-right", cellClassName: "text-right" },
+      cell: ({ row }) => (
+        <div className="flex items-center justify-end gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => setSelected(row.original)}
+          >
+            <Eye className="h-4 w-4" />
+          </Button>
+          {row.original.status !== "paid" && row.original.status !== "cancelled" && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7"
+              onClick={() => {
+                setPayBill(row.original as unknown as Record<string, any>);
+                setPayOpen(true);
+              }}
+            >
+              <Banknote className="h-3 w-3" /> Make payment
+            </Button>
+          )}
+        </div>
+      ),
+    },
+  ];
 
   function setItem(idx: number, patch: Partial<Item>) {
     setItems((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
@@ -147,52 +223,15 @@ export function BillsClient() {
           }
         />
       ) : (
-        <Card className="overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Number</TableHead>
-                <TableHead>Vendor</TableHead>
-                <TableHead>Issue date</TableHead>
-                <TableHead className="text-right">Total</TableHead>
-                <TableHead className="text-right">Paid</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {bills.map((bill: Record<string, any>) => {
-                const paid = bill.payments.reduce((s: number, p: any) => s + Number(p.amount), 0);
-                return (
-                  <TableRow key={bill.id}>
-                    <TableCell className="font-mono text-xs">{bill.billNumber}</TableCell>
-                    <TableCell className="font-medium">{bill.vendor.name}</TableCell>
-                    <TableCell>{new Date(bill.issueDate).toLocaleDateString()}</TableCell>
-                    <TableCell className="text-right">{Number(bill.total).toLocaleString()}</TableCell>
-                    <TableCell className="text-right">{paid.toLocaleString()}</TableCell>
-                    <TableCell>
-                      <Badge variant={badgeVariant[bill.status] ?? "outline"}>{bill.status}</Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {bill.status !== "paid" && bill.status !== "cancelled" && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-7"
-                          onClick={() => {
-                            setPayBill(bill);
-                            setPayOpen(true);
-                          }}
-                        >
-                          <Banknote className="h-3 w-3" /> Make payment
-                        </Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
+        <Card className="overflow-hidden p-2">
+          <DataTable
+            columns={columns}
+            data={bills as BillRow[]}
+            filterKeys={["billNumber", "vendor.name", "status"]}
+            searchPlaceholder="Search bills…"
+            emptyMessage="No bills match your search"
+            pageSize={10}
+          />
         </Card>
       )}
 
@@ -334,6 +373,18 @@ export function BillsClient() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <BillDetail
+        open={!!selected}
+        onOpenChange={(o) => !o && setSelected(null)}
+        bill={selected}
+        vendors={vendors}
+        canEdit={canEdit}
+        onUpdated={(updated) => {
+          mutate();
+          if (updated) setSelected((prev) => ({ ...prev, ...updated }));
+        }}
+      />
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 import { LoginForm } from "@/components/auth/login-form";
@@ -17,7 +18,9 @@ export default async function LoginPage() {
             Accounting, HR and Payroll in one place
           </p>
         </div>
-        <LoginForm />
+        <Suspense>
+          <LoginForm />
+        </Suspense>
       </div>
     </div>
   );

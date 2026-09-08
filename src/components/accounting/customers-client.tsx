@@ -2,7 +2,8 @@
 
 import useSWR from "swr";
 import { useState } from "react";
-import { Plus } from "lucide-react";
+import { Plus, Eye } from "lucide-react";
+import type { ColumnDef } from "@tanstack/react-table";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/modules/page-header";
 import { EmptyState } from "@/components/modules/empty-state";
@@ -11,14 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { DataTable } from "@/components/ui/data-table";
 import {
   Dialog,
   DialogContent,
@@ -26,14 +20,62 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { CustomerDetail, type CustomerRow } from "@/components/accounting/customer-detail";
+import { hasPermission } from "@/lib/client-permissions";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
-export function CustomersClient() {
+export function CustomersClient({ permissions }: { permissions?: Set<string> }) {
   const { data, mutate } = useSWR("/api/accounting/customers", fetcher);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [selected, setSelected] = useState<CustomerRow | null>(null);
   const customers = data?.customers ?? [];
+  const canEdit = hasPermission(permissions, "accounting.invoices");
+
+  const columns: ColumnDef<CustomerRow>[] = [
+    {
+      accessorKey: "name",
+      header: "Name",
+      cell: ({ row }) => <span className="font-medium">{row.original.name}</span>,
+    },
+    {
+      accessorFn: (c) => c.email ?? "",
+      id: "email",
+      header: "Email",
+      cell: ({ row }) => <span>{row.original.email ?? "—"}</span>,
+    },
+    {
+      accessorFn: (c) => c.phone ?? "",
+      id: "phone",
+      header: "Phone",
+      cell: ({ row }) => <span>{row.original.phone ?? "—"}</span>,
+    },
+    {
+      accessorFn: (c) => c._count?.invoices,
+      id: "invoices",
+      header: "Invoices",
+      meta: { headerClassName: "text-right", cellClassName: "text-right" },
+      cell: ({ row }) => <Badge variant="secondary">{row.original._count?.invoices ?? 0}</Badge>,
+    },
+    {
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      size: 44,
+      meta: { headerClassName: "text-right", cellClassName: "text-right" },
+      cell: ({ row }) => (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7"
+          onClick={() => setSelected(row.original)}
+        >
+          <Eye className="h-4 w-4" />
+        </Button>
+      ),
+    },
+  ];
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -81,31 +123,28 @@ export function CustomersClient() {
           }
         />
       ) : (
-        <Card className="overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead>Phone</TableHead>
-                <TableHead className="text-right">Invoices</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {customers.map((c: Record<string, any>) => (
-                <TableRow key={c.id}>
-                  <TableCell className="font-medium">{c.name}</TableCell>
-                  <TableCell>{c.email ?? "—"}</TableCell>
-                  <TableCell>{c.phone ?? "—"}</TableCell>
-                  <TableCell className="text-right">
-                    <Badge variant="secondary">{c._count.invoices}</Badge>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+        <Card className="overflow-hidden p-2">
+          <DataTable
+            columns={columns}
+            data={customers as CustomerRow[]}
+            filterKeys={["name", "email", "phone"]}
+            searchPlaceholder="Search customers…"
+            emptyMessage="No customers match your search"
+            pageSize={10}
+          />
         </Card>
       )}
+
+      <CustomerDetail
+        open={!!selected}
+        onOpenChange={(o) => !o && setSelected(null)}
+        customer={selected}
+        canEdit={canEdit}
+        onUpdated={(updated) => {
+          mutate();
+          if (updated) setSelected((prev) => ({ ...prev, ...updated }));
+        }}
+      />
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>

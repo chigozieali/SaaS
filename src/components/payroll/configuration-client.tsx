@@ -3,6 +3,7 @@
 import useSWR from "swr";
 import { useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
+import type { ColumnDef } from "@tanstack/react-table";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/modules/page-header";
 import { EmptyState } from "@/components/modules/empty-state";
@@ -11,14 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { DataTable } from "@/components/ui/data-table";
 import {
   Dialog,
   DialogContent,
@@ -42,6 +36,91 @@ type TaxRow = { lower: string; upper: string; rate: string };
 type RuleRow = { name: string; type: string; value: string; cap: string };
 type ContribRow = { name: string; contributor: string; type: string; value: string; cap: string };
 
+type TaxBracketRow = { id: string; lowerBound: number; upperBound: number | null; rate: number };
+type DeductionRuleRow = { id: string; name: string; calculationType: string; value: number };
+type ContributionRuleRow = {
+  id: string;
+  name: string;
+  contributor: string;
+  calculationType: string;
+  value: number;
+};
+
+const calcTypeLabel: Record<string, string> = {
+  fixed: "Fixed",
+  percent_basic: "% of basic",
+  percent_gross: "% of gross",
+  percent_of_tax: "% of tax",
+};
+
+const taxBracketColumns: ColumnDef<TaxBracketRow>[] = [
+  {
+    accessorFn: (r) => Number(r.lowerBound),
+    id: "from",
+    header: "From",
+    meta: { headerClassName: "text-right", cellClassName: "text-right" },
+    cell: ({ row }) => <span>{Number(row.original.lowerBound).toLocaleString()}</span>,
+  },
+  {
+    accessorFn: (r) => (r.upperBound ? Number(r.upperBound) : Infinity),
+    id: "to",
+    header: "To",
+    meta: { headerClassName: "text-right", cellClassName: "text-right" },
+    cell: ({ row }) =>
+      row.original.upperBound ? (
+        <span>{Number(row.original.upperBound).toLocaleString()}</span>
+      ) : (
+        <span>∞</span>
+      ),
+  },
+  {
+    accessorFn: (r) => Number(r.rate),
+    id: "rate",
+    header: "Rate",
+    meta: { headerClassName: "text-right", cellClassName: "text-right" },
+    cell: ({ row }) => <span>{Number(row.original.rate)}%</span>,
+  },
+];
+
+const deductionRuleColumns: ColumnDef<DeductionRuleRow>[] = [
+  { accessorKey: "name", header: "Name", cell: ({ row }) => <span>{row.original.name}</span> },
+  {
+    accessorFn: (r) => r.calculationType,
+    id: "type",
+    header: "Type",
+    cell: ({ row }) => (
+      <span>{calcTypeLabel[row.original.calculationType] ?? row.original.calculationType}</span>
+    ),
+  },
+  {
+    accessorFn: (r) => Number(r.value),
+    id: "value",
+    header: "Value",
+    meta: { headerClassName: "text-right", cellClassName: "text-right" },
+    cell: ({ row }) => <span>{Number(row.original.value).toLocaleString()}</span>,
+  },
+];
+
+const contributionRuleColumns: ColumnDef<ContributionRuleRow>[] = [
+  { accessorKey: "name", header: "Name", cell: ({ row }) => <span>{row.original.name}</span> },
+  {
+    accessorKey: "contributor",
+    header: "Side",
+    cell: ({ row }) => <span>{row.original.contributor}</span>,
+  },
+  {
+    accessorFn: (r) => `${r.calculationType} ${Number(r.value)}`,
+    id: "value",
+    header: "Value",
+    cell: ({ row }) => (
+      <span>
+        {calcTypeLabel[row.original.calculationType] ?? row.original.calculationType}{" "}
+        {Number(row.original.value).toLocaleString()}
+      </span>
+    ),
+  },
+];
+
 export function ConfigurationClient() {
   const { data, mutate } = useSWR("/api/payroll/configuration", fetcher);
   const [open, setOpen] = useState(false);
@@ -61,13 +140,6 @@ export function ConfigurationClient() {
   function newContrib(name = ""): ContribRow {
     return { name, contributor: "employee", type: "percent_gross", value: "", cap: "" };
   }
-
-  const calcTypeLabel: Record<string, string> = {
-    fixed: "Fixed",
-    percent_basic: "% of basic",
-    percent_gross: "% of gross",
-    percent_of_tax: "% of tax",
-  };
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -161,48 +233,24 @@ export function ConfigurationClient() {
               <div className="grid gap-6 p-6 md:grid-cols-3">
                 <div>
                   <h3 className="mb-2 text-sm font-medium">Tax brackets</h3>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>From</TableHead>
-                        <TableHead>To</TableHead>
-                        <TableHead>Rate</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {config.taxRules.map((r: Record<string, any>) => (
-                        <TableRow key={r.id}>
-                          <TableCell>{Number(r.lowerBound).toLocaleString()}</TableCell>
-                          <TableCell>{r.upperBound ? Number(r.upperBound).toLocaleString() : "∞"}</TableCell>
-                          <TableCell>{Number(r.rate)}%</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                  <DataTable
+                    columns={taxBracketColumns}
+                    data={(config.taxRules ?? []) as TaxBracketRow[]}
+                    dense
+                    paginated={false}
+                  />
                 </div>
                 <div>
                   <h3 className="mb-2 text-sm font-medium">Deductions</h3>
                   {config.deductionRules.length === 0 ? (
                     <p className="text-sm text-muted-foreground">None</p>
                   ) : (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Name</TableHead>
-                          <TableHead>Type</TableHead>
-                          <TableHead>Value</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {config.deductionRules.map((r: Record<string, any>) => (
-                          <TableRow key={r.id}>
-                            <TableCell>{r.name}</TableCell>
-                            <TableCell>{calcTypeLabel[r.calculationType] ?? r.calculationType}</TableCell>
-                            <TableCell>{Number(r.value).toLocaleString()}</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                    <DataTable
+                      columns={deductionRuleColumns}
+                      data={(config.deductionRules ?? []) as DeductionRuleRow[]}
+                      dense
+                      paginated={false}
+                    />
                   )}
                 </div>
                 <div>
@@ -210,26 +258,12 @@ export function ConfigurationClient() {
                   {config.contributionRules.length === 0 ? (
                     <p className="text-sm text-muted-foreground">None</p>
                   ) : (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Name</TableHead>
-                          <TableHead>Side</TableHead>
-                          <TableHead>Value</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {config.contributionRules.map((r: Record<string, any>) => (
-                          <TableRow key={r.id}>
-                            <TableCell>{r.name}</TableCell>
-                            <TableCell>{r.contributor}</TableCell>
-                            <TableCell>
-                              {calcTypeLabel[r.calculationType] ?? r.calculationType} {Number(r.value).toLocaleString()}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                    <DataTable
+                      columns={contributionRuleColumns}
+                      data={(config.contributionRules ?? []) as ContributionRuleRow[]}
+                      dense
+                      paginated={false}
+                    />
                   )}
                 </div>
               </div>

@@ -3,6 +3,7 @@
 import useSWR from "swr";
 import { useState } from "react";
 import { UserPlus } from "lucide-react";
+import type { ColumnDef } from "@tanstack/react-table";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/modules/page-header";
 import { Button } from "@/components/ui/button";
@@ -11,14 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { DataTable } from "@/components/ui/data-table";
 import {
   Dialog,
   DialogContent,
@@ -44,6 +38,13 @@ const initials = (name: string) =>
     .join("")
     .toUpperCase();
 
+type MemberRow = {
+  id: string;
+  createdAt: string;
+  role?: { name: string } | null;
+  user: { name: string | null; email: string; isActive: boolean };
+};
+
 export function UsersClient() {
   const { data, mutate } = useSWR("/api/admin/users", fetcher);
   const [open, setOpen] = useState(false);
@@ -52,6 +53,55 @@ export function UsersClient() {
 
   const members = data?.members ?? [];
   const roles = data?.roles ?? [];
+
+  const columns: ColumnDef<MemberRow>[] = [
+    {
+      accessorFn: (m) => `${m.user.name ?? ""} ${m.user.email}`,
+      id: "user",
+      header: "User",
+      cell: ({ row }) => {
+        const m = row.original;
+        return (
+          <div className="flex items-center gap-3">
+            <Avatar className="h-8 w-8">
+              <AvatarFallback>{initials(m.user.name ?? m.user.email)}</AvatarFallback>
+            </Avatar>
+            <div>
+              <p className="text-sm font-medium">{m.user.name ?? "—"}</p>
+              <p className="text-xs text-muted-foreground">{m.user.email}</p>
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      accessorFn: (m) => m.role?.name ?? "",
+      id: "role",
+      header: "Role",
+      cell: ({ row }) => <Badge variant="secondary">{row.original.role?.name ?? "No role"}</Badge>,
+    },
+    {
+      accessorFn: (m) => (m.user.isActive ? "Active" : "Inactive"),
+      id: "status",
+      header: "Status",
+      cell: ({ row }) => (
+        <Badge variant={row.original.user.isActive ? "success" : "destructive"}>
+          {row.original.user.isActive ? "Active" : "Inactive"}
+        </Badge>
+      ),
+    },
+    {
+      accessorFn: (m) => new Date(m.createdAt).getTime(),
+      id: "joined",
+      header: "Joined",
+      meta: { headerClassName: "text-right", cellClassName: "text-right" },
+      cell: ({ row }) => (
+        <span className="text-muted-foreground">
+          {new Date(row.original.createdAt).toLocaleDateString()}
+        </span>
+      ),
+    },
+  ];
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -87,52 +137,15 @@ export function UsersClient() {
         </Button>
       </PageHeader>
 
-      <Card className="overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>User</TableHead>
-              <TableHead>Role</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Joined</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {members.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">
-                  No members yet.
-                </TableCell>
-              </TableRow>
-            )}
-            {members.map((m: Record<string, any>) => (
-              <TableRow key={m.id}>
-                <TableCell>
-                  <div className="flex items-center gap-3">
-                    <Avatar className="h-8 w-8">
-                      <AvatarFallback>{initials(m.user.name ?? m.user.email)}</AvatarFallback>
-                    </Avatar>
-                    <div>
-                      <p className="text-sm font-medium">{m.user.name ?? "—"}</p>
-                      <p className="text-xs text-muted-foreground">{m.user.email}</p>
-                    </div>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <Badge variant="secondary">{m.role?.name ?? "No role"}</Badge>
-                </TableCell>
-                <TableCell>
-                  <Badge variant={m.user.isActive ? "success" : "destructive"}>
-                    {m.user.isActive ? "Active" : "Inactive"}
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-right text-muted-foreground">
-                  {new Date(m.createdAt).toLocaleDateString()}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+      <Card className="overflow-hidden p-2">
+        <DataTable
+          columns={columns}
+          data={members as MemberRow[]}
+          filterKeys={["user.name", "user.email", "role.name"]}
+          searchPlaceholder="Search users…"
+          emptyMessage="No members yet."
+          pageSize={10}
+        />
       </Card>
 
       <Dialog open={open} onOpenChange={setOpen}>

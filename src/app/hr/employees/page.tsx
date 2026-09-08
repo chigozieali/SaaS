@@ -5,10 +5,10 @@ import { EmployeesClient } from "@/components/hr/employees-client";
 export const dynamic = "force-dynamic";
 
 export default async function EmployeesPage() {
-  await requireOrg("employees.view");
+  const ctx = await requireOrg("employees.view");
   return (
     <AppShell>
-      <EmployeesClient />
+      <EmployeesClient permissions={ctx.permissions} />
     </AppShell>
   );
 }

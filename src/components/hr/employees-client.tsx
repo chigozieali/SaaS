@@ -2,7 +2,7 @@
 
 import useSWR from "swr";
 import { useState } from "react";
-import { Plus, MoreHorizontal } from "lucide-react";
+import { Plus, MoreHorizontal, Eye } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/modules/page-header";
@@ -18,93 +18,19 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { EmployeeDialog } from "@/components/hr/employee-dialog";
+import { EmployeeDetail, type EmployeeRow } from "@/components/hr/employee-detail";
+import { hasPermission } from "@/lib/client-permissions";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
-type EmployeeRow = {
-  id: string;
-  employeeCode: string;
-  firstName: string;
-  lastName: string;
-  department?: { name: string } | null;
-  position?: { title: string } | null;
-  isActive: boolean;
-};
-
-const columns: ColumnDef<EmployeeRow>[] = [
-  {
-    accessorKey: "employeeCode",
-    header: "Code",
-    cell: ({ row }) => (
-      <span className="font-mono text-xs">{row.original.employeeCode}</span>
-    ),
-    meta: { cellClassName: "font-medium" },
-  },
-  {
-    accessorFn: (e) => `${e.firstName} ${e.lastName}`,
-    id: "name",
-    header: "Name",
-    cell: ({ row }) => (
-      <span className="font-medium">
-        {row.original.firstName} {row.original.lastName}
-      </span>
-    ),
-  },
-  {
-    accessorFn: (e) => e.department?.name ?? "",
-    id: "department",
-    header: "Department",
-    cell: ({ row }) => <span>{row.original.department?.name ?? "—"}</span>,
-  },
-  {
-    accessorFn: (e) => e.position?.title ?? "",
-    id: "position",
-    header: "Position",
-    cell: ({ row }) => <span>{row.original.position?.title ?? "—"}</span>,
-  },
-  {
-    accessorFn: (e) => (e.isActive ? "Active" : "Inactive"),
-    id: "status",
-    header: "Status",
-    cell: ({ row }) => (
-      <Badge variant={row.original.isActive ? "success" : "destructive"}>
-        {row.original.isActive ? "Active" : "Inactive"}
-      </Badge>
-    ),
-  },
-  {
-    id: "actions",
-    header: "",
-    enableSorting: false,
-    meta: { headerClassName: "text-right", cellClassName: "text-right" },
-    cell: ({ row }) => {
-      const employee = row.original;
-      return (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon">
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => handleDelete(employee.id)}>
-              Deactivate
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      );
-    },
-  },
-];
-
-let handleDelete: (id: string) => void;
-
-export function EmployeesClient() {
+export function EmployeesClient({ permissions }: { permissions?: Set<string> }) {
   const { data, mutate } = useSWR("/api/hr/employees", fetcher);
   const employees: EmployeeRow[] = data?.employees ?? [];
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [selected, setSelected] = useState<EmployeeRow | null>(null);
+  const canEdit = hasPermission(permissions, "employees.edit");
 
-  handleDelete = async (id: string) => {
+  const handleDelete = async (id: string) => {
     const res = await fetch(`/api/hr/employees/${id}`, { method: "DELETE" });
     if (res.ok) {
       toast.success("Employee deactivated");
@@ -113,6 +39,81 @@ export function EmployeesClient() {
       toast.error("Failed to deactivate employee");
     }
   };
+
+  const columns: ColumnDef<EmployeeRow>[] = [
+    {
+      accessorKey: "employeeCode",
+      header: "Code",
+      cell: ({ row }) => (
+        <span className="font-mono text-xs">{row.original.employeeCode}</span>
+      ),
+    },
+    {
+      accessorFn: (e) => `${e.firstName} ${e.lastName}`,
+      id: "name",
+      header: "Name",
+      cell: ({ row }) => (
+        <span className="font-medium">
+          {row.original.firstName} {row.original.lastName}
+        </span>
+      ),
+    },
+    {
+      accessorFn: (e) => e.department?.name ?? "",
+      id: "department",
+      header: "Department",
+      cell: ({ row }) => <span>{row.original.department?.name ?? "—"}</span>,
+    },
+    {
+      accessorFn: (e) => e.position?.title ?? "",
+      id: "position",
+      header: "Position",
+      cell: ({ row }) => <span>{row.original.position?.title ?? "—"}</span>,
+    },
+    {
+      accessorFn: (e) => (e.isActive ? "Active" : "Inactive"),
+      id: "status",
+      header: "Status",
+      cell: ({ row }) => (
+        <Badge variant={row.original.isActive ? "success" : "destructive"}>
+          {row.original.isActive ? "Active" : "Inactive"}
+        </Badge>
+      ),
+    },
+    {
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      meta: { headerClassName: "text-right", cellClassName: "text-right" },
+      cell: ({ row }) => {
+        const employee = row.original;
+        return (
+          <div className="flex items-center justify-end gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={() => setSelected(employee)}
+            >
+              <Eye className="h-4 w-4" />
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-7 w-7">
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => handleDelete(employee.id)}>
+                  Deactivate
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        );
+      },
+    },
+  ];
 
   return (
     <div>
@@ -155,6 +156,18 @@ export function EmployeesClient() {
           toast.success("Employee created");
           mutate();
           setDialogOpen(false);
+        }}
+      />
+
+      <EmployeeDetail
+        open={!!selected}
+        onOpenChange={(o) => !o && setSelected(null)}
+        employee={selected}
+        managers={employees}
+        canEdit={canEdit}
+        onUpdated={(updated) => {
+          mutate();
+          if (updated) setSelected((prev) => ({ ...prev, ...updated }));
         }}
       />
     </div>

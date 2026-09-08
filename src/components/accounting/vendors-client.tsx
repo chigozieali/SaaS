@@ -3,6 +3,7 @@
 import useSWR from "swr";
 import { useState } from "react";
 import { Plus } from "lucide-react";
+import type { ColumnDef } from "@tanstack/react-table";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/modules/page-header";
 import { EmptyState } from "@/components/modules/empty-state";
@@ -11,14 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { DataTable } from "@/components/ui/data-table";
 import {
   Dialog,
   DialogContent,
@@ -29,11 +23,46 @@ import {
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
+type VendorRow = {
+  id: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  _count: { bills: number };
+};
+
 export function VendorsClient() {
   const { data, mutate } = useSWR("/api/accounting/vendors", fetcher);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const vendors = data?.vendors ?? [];
+
+  const columns: ColumnDef<VendorRow>[] = [
+    {
+      accessorKey: "name",
+      header: "Name",
+      cell: ({ row }) => <span className="font-medium">{row.original.name}</span>,
+    },
+    {
+      accessorFn: (v) => v.email ?? "",
+      id: "email",
+      header: "Email",
+      cell: ({ row }) => <span>{row.original.email ?? "—"}</span>,
+    },
+    {
+      accessorFn: (v) => v.phone ?? "",
+      id: "phone",
+      header: "Phone",
+      cell: ({ row }) => <span>{row.original.phone ?? "—"}</span>,
+    },
+    {
+      accessorFn: (v) => v._count.bills,
+      id: "bills",
+      header: "Bills",
+      meta: { headerClassName: "text-right", cellClassName: "text-right" },
+      cell: ({ row }) => <Badge variant="secondary">{row.original._count.bills}</Badge>,
+    },
+  ];
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -81,29 +110,15 @@ export function VendorsClient() {
           }
         />
       ) : (
-        <Card className="overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead>Phone</TableHead>
-                <TableHead className="text-right">Bills</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {vendors.map((v: Record<string, any>) => (
-                <TableRow key={v.id}>
-                  <TableCell className="font-medium">{v.name}</TableCell>
-                  <TableCell>{v.email ?? "—"}</TableCell>
-                  <TableCell>{v.phone ?? "—"}</TableCell>
-                  <TableCell className="text-right">
-                    <Badge variant="secondary">{v._count.bills}</Badge>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+        <Card className="overflow-hidden p-2">
+          <DataTable
+            columns={columns}
+            data={vendors as VendorRow[]}
+            filterKeys={["name", "email", "phone"]}
+            searchPlaceholder="Search vendors…"
+            emptyMessage="No vendors match your search"
+            pageSize={10}
+          />
         </Card>
       )}
 

@@ -33,7 +33,7 @@ import { cn } from "@/lib/utils";
 
 declare module "@tanstack/react-table" {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  interface ColumnMeta<TData extends unknown, TValue> {
+  interface ColumnMeta<TData, TValue> {
     headerClassName?: string;
     cellClassName?: string;
   }
@@ -50,6 +50,7 @@ type DataTableProps<TData> = {
   pageSize?: number;
   pageSizeOptions?: number[];
   dense?: boolean;
+  paginated?: boolean;
 };
 
 function getPath<TRow>(row: TRow, path: string): unknown {
@@ -70,6 +71,7 @@ export function DataTable<TData>({
   pageSize = 10,
   pageSizeOptions = [10, 25, 50],
   dense = false,
+  paginated = true,
 }: DataTableProps<TData>) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [searchValue, setSearchValue] = React.useState("");
@@ -105,18 +107,22 @@ export function DataTable<TData>({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="relative w-full max-w-sm">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={searchValue}
-            onChange={(e) => setSearchValue(e.target.value)}
-            placeholder={searchPlaceholder}
-            className="pl-8"
-          />
+      {filterKeys.length > 0 || toolbar ? (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {filterKeys.length > 0 ? (
+            <div className="relative w-full max-w-sm">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={searchValue}
+                onChange={(e) => setSearchValue(e.target.value)}
+                placeholder={searchPlaceholder}
+                className="pl-8"
+              />
+            </div>
+          ) : null}
+          {toolbar ? <div className="flex items-center gap-2">{toolbar}</div> : null}
         </div>
-        {toolbar ? <div className="flex items-center gap-2">{toolbar}</div> : null}
-      </div>
+      ) : null}
 
       <div className="rounded-md border">
         <Table>
@@ -206,50 +212,60 @@ export function DataTable<TData>({
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
-        <div className="flex items-center gap-2">
-          <span>Rows per page</span>
-          <Select
-            value={String(pageSizeActive)}
-            onValueChange={(value) => table.setPageSize(Number(value))}
-          >
-            <SelectTrigger className="h-8 w-[70px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {pageSizeOptions.map((size) => (
-                <SelectItem key={size} value={String(size)}>
-                  {size}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <span className="whitespace-nowrap">
+        {paginated ? (
+          <>
+            <div className="flex items-center gap-2">
+              <span>Rows per page</span>
+              <Select
+                value={String(pageSizeActive)}
+                onValueChange={(value) => table.setPageSize(Number(value))}
+              >
+                <SelectTrigger className="h-8 w-[70px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {pageSizeOptions.map((size) => (
+                    <SelectItem key={size} value={String(size)}>
+                      {size}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <span className="whitespace-nowrap">
+                {rows.length === 0
+                  ? "0 rows"
+                  : `${pageIdx * pageSizeActive + 1}–${Math.min(
+                      (pageIdx + 1) * pageSizeActive,
+                      rows.length
+                    )} of ${rows.length}`}
+              </span>
+            </div>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => table.previousPage()}
+                disabled={!table.getCanPreviousPage()}
+              >
+                <ChevronLeft className="h-4 w-4" /> Previous
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => table.nextPage()}
+                disabled={!table.getCanNextPage()}
+              >
+                Next <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </>
+        ) : (
+          <span>
             {rows.length === 0
               ? "0 rows"
-              : `${pageIdx * pageSizeActive + 1}–${Math.min(
-                  (pageIdx + 1) * pageSizeActive,
-                  rows.length
-                )} of ${rows.length}`}
+              : `${rows.length} ${rows.length === 1 ? "row" : "rows"}`}
           </span>
-        </div>
-        <div className="flex items-center gap-1">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => table.previousPage()}
-            disabled={!table.getCanPreviousPage()}
-          >
-            <ChevronLeft className="h-4 w-4" /> Previous
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => table.nextPage()}
-            disabled={!table.getCanNextPage()}
-          >
-            Next <ChevronRight className="h-4 w-4" />
-          </Button>
-        </div>
+        )}
       </div>
     </div>
   );

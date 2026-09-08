@@ -14,14 +14,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { UpcomingReceivables } from "@/components/dashboard/upcoming-receivables";
 import { db } from "@/lib/prisma";
 import { formatMoney } from "@/lib/utils";
 import { requireOrg } from "@/lib/access";
@@ -227,34 +220,15 @@ export default async function DashboardPage() {
               </CardTitle>
               <CardDescription>Invoices due within 7 days</CardDescription>
             </CardHeader>
-            <CardContent>
-              {overdueInvoices.length === 0 ? (
-                <p className="py-6 text-center text-sm text-muted-foreground">
-                  No invoices due soon.
-                </p>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Invoice</TableHead>
-                      <TableHead>Customer</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {overdueInvoices.map((inv) => (
-                      <TableRow key={inv.id}>
-                        <TableCell className="font-medium">{inv.invoiceNumber}</TableCell>
-                        <TableCell>{inv.customer.name}</TableCell>
-                        <TableCell className="text-right">
-                          {formatMoney(Number(inv.total), currency)}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
+            <UpcomingReceivables
+              currency={currency}
+              rows={overdueInvoices.map((inv) => ({
+                id: inv.id,
+                invoiceNumber: inv.invoiceNumber,
+                customerName: inv.customer.name,
+                amount: Number(inv.total),
+              }))}
+            />
           </Card>
         </div>
 

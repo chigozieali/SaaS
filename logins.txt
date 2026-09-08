@@ -1,0 +1,7 @@
+Role	Email
+Admin (owner)	admin@example.com
+Manager	manager@example.com
+Accountant	accountant@example.com
+Employee	employee@example.com
+
+DemoPass123!

@@ -32,7 +32,7 @@ export async function GET() {
     include: {
       department: true,
       position: true,
-      manager: { select: { firstName: true, lastName: true } },
+      manager: { select: { id: true, firstName: true, lastName: true } },
       salaryStructures: { where: { isActive: true }, take: 1 },
     },
     orderBy: { createdAt: "desc" },

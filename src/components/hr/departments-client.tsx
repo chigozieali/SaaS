@@ -3,6 +3,7 @@
 import useSWR from "swr";
 import { useState } from "react";
 import { Plus } from "lucide-react";
+import type { ColumnDef } from "@tanstack/react-table";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/modules/page-header";
 import { EmptyState } from "@/components/modules/empty-state";
@@ -10,14 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { DataTable } from "@/components/ui/data-table";
 import {
   Dialog,
   DialogContent,
@@ -29,11 +23,53 @@ import { Badge } from "@/components/ui/badge";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
+type DepartmentRow = {
+  id: string;
+  name: string;
+  code: string | null;
+  manager?: { firstName: string; lastName: string } | null;
+  _count: { employees: number };
+};
+
 export function DepartmentsClient() {
   const { data, mutate } = useSWR("/api/hr/departments", fetcher);
-  const departments = data?.departments ?? [];
+  const departments: DepartmentRow[] = data?.departments ?? [];
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  const columns: ColumnDef<DepartmentRow>[] = [
+    {
+      accessorKey: "name",
+      header: "Name",
+      cell: ({ row }) => <span className="font-medium">{row.original.name}</span>,
+    },
+    {
+      accessorKey: "code",
+      header: "Code",
+      cell: ({ row }) => <span>{row.original.code ?? "—"}</span>,
+    },
+    {
+      accessorFn: (d) => (d.manager ? `${d.manager.firstName} ${d.manager.lastName}` : ""),
+      id: "manager",
+      header: "Manager",
+      cell: ({ row }) => (
+        <span>
+          {row.original.manager
+            ? `${row.original.manager.firstName} ${row.original.manager.lastName}`
+            : "—"}
+        </span>
+      ),
+    },
+    {
+      accessorFn: (d) => d._count.employees,
+      id: "employees",
+      header: "Employees",
+      meta: { headerClassName: "text-right", cellClassName: "text-right" },
+      cell: ({ row }) => (
+        <Badge variant="secondary">{row.original._count.employees}</Badge>
+      ),
+    },
+  ];
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -78,31 +114,15 @@ export function DepartmentsClient() {
           }
         />
       ) : (
-        <Card className="overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Code</TableHead>
-                <TableHead>Manager</TableHead>
-                <TableHead className="text-right">Employees</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {departments.map((d: Record<string, any>) => (
-                <TableRow key={d.id}>
-                  <TableCell className="font-medium">{d.name}</TableCell>
-                  <TableCell>{d.code ?? "—"}</TableCell>
-                  <TableCell>
-                    {d.manager ? `${d.manager.firstName} ${d.manager.lastName}` : "—"}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Badge variant="secondary">{d._count.employees}</Badge>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+        <Card className="overflow-hidden p-2">
+          <DataTable
+            columns={columns}
+            data={departments}
+            filterKeys={["name", "code", "manager.firstName", "manager.lastName"]}
+            searchPlaceholder="Search departments…"
+            emptyMessage="No departments match your search"
+            pageSize={10}
+          />
         </Card>
       )}
 

@@ -2,45 +2,139 @@
 
 import useSWR from "swr";
 import { useState } from "react";
+import type { ColumnDef } from "@tanstack/react-table";
 import { PageHeader } from "@/components/modules/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { DataTable } from "@/components/ui/data-table";
 import { Skeleton } from "@/components/ui/skeleton";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
-const fmt = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmt = (n: number) =>
+  n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-function Section({ title, rows, money }: { title: string; rows: any[]; money?: boolean }) {
-  if (rows.length === 0) return null;
+type ReportAccountRow = { code: string; name: string; balance: number };
+type TrialBalanceRow = { code: string; name: string; debit: number | null; credit: number | null };
+type LedgerRow = {
+  date: string;
+  entryNumber: string;
+  accountCode: string;
+  accountName: string;
+  description: string | null;
+  reference: string | null;
+  debit: number | null;
+  credit: number | null;
+  runningBalance: number;
+};
+
+const reportAccountColumns: ColumnDef<ReportAccountRow>[] = [
+  {
+    accessorKey: "code",
+    header: "Code",
+    cell: ({ row }) => <span className="font-mono text-xs">{row.original.code}</span>,
+  },
+  { accessorKey: "name", header: "Account", cell: ({ row }) => <span>{row.original.name}</span> },
+  {
+    accessorFn: (r) => Number(r.balance),
+    id: "amount",
+    header: "Amount",
+    meta: { headerClassName: "text-right", cellClassName: "text-right" },
+    cell: ({ row }) => <span>{fmt(Number(row.original.balance))}</span>,
+  },
+];
+
+const trialBalanceColumns: ColumnDef<TrialBalanceRow>[] = [
+  {
+    accessorKey: "code",
+    header: "Code",
+    cell: ({ row }) => <span className="font-mono text-xs">{row.original.code}</span>,
+  },
+  { accessorKey: "name", header: "Account", cell: ({ row }) => <span>{row.original.name}</span> },
+  {
+    accessorFn: (r) => (r.debit ? Number(r.debit) : null),
+    id: "debit",
+    header: "Debit",
+    meta: { headerClassName: "text-right", cellClassName: "text-right" },
+    cell: ({ row }) => (row.original.debit ? <span>{fmt(row.original.debit)}</span> : <span>—</span>),
+  },
+  {
+    accessorFn: (r) => (r.credit ? Number(r.credit) : null),
+    id: "credit",
+    header: "Credit",
+    meta: { headerClassName: "text-right", cellClassName: "text-right" },
+    cell: ({ row }) => (row.original.credit ? <span>{fmt(row.original.credit)}</span> : <span>—</span>),
+  },
+];
+
+const ledgerColumns: ColumnDef<LedgerRow>[] = [
+  {
+    accessorFn: (l) => new Date(l.date).getTime(),
+    id: "date",
+    header: "Date",
+    cell: ({ row }) => <span>{new Date(row.original.date).toLocaleDateString()}</span>,
+  },
+  {
+    accessorFn: (l) => l.entryNumber,
+    id: "entry",
+    header: "Entry",
+    cell: ({ row }) => <span className="font-mono text-xs">{row.original.entryNumber}</span>,
+  },
+  {
+    accessorFn: (l) => `${l.accountCode} ${l.accountName}`,
+    id: "account",
+    header: "Account",
+    cell: ({ row }) => (
+      <span>
+        <span className="font-mono text-xs">{row.original.accountCode}</span> {row.original.accountName}
+      </span>
+    ),
+  },
+  {
+    accessorFn: (l) => l.description ?? l.reference ?? "",
+    id: "description",
+    header: "Description",
+    cell: ({ row }) => (
+      <span className="text-muted-foreground">
+        {row.original.description ?? row.original.reference ?? "—"}
+      </span>
+    ),
+  },
+  {
+    accessorFn: (l) => (l.debit ? Number(l.debit) : null),
+    id: "debit",
+    header: "Debit",
+    meta: { headerClassName: "text-right", cellClassName: "text-right" },
+    cell: ({ row }) => (row.original.debit ? <span>{fmt(row.original.debit)}</span> : <span>—</span>),
+  },
+  {
+    accessorFn: (l) => (l.credit ? Number(l.credit) : null),
+    id: "credit",
+    header: "Credit",
+    meta: { headerClassName: "text-right", cellClassName: "text-right" },
+    cell: ({ row }) => (row.original.credit ? <span>{fmt(row.original.credit)}</span> : <span>—</span>),
+  },
+  {
+    accessorFn: (l) => Number(l.runningBalance),
+    id: "balance",
+    header: "Balance",
+    meta: { headerClassName: "text-right", cellClassName: "text-right" },
+    cell: ({ row }) => <span className="font-medium">{fmt(Number(row.original.runningBalance))}</span>,
+  },
+];
+
+function TotalRow({ label, value, bold }: { label: string; value: number; bold?: boolean }) {
   return (
-    <>
-      <TableRow className="bg-muted/50">
-        <TableCell colSpan={2} className="font-semibold">
-          {title}
-        </TableCell>
-        <TableCell className="text-right font-semibold" />
-      </TableRow>
-      {rows.map((r) => (
-        <TableRow key={r.code}>
-          <TableCell className="font-mono text-xs">{r.code}</TableCell>
-          <TableCell>{r.name}</TableCell>
-          <TableCell className="text-right">
-            {money ? fmt(r.balance) : fmt(r.balance)}
-          </TableCell>
-        </TableRow>
-      ))}
-    </>
+    <div
+      className={`flex items-center justify-between rounded-md border px-3 py-2 text-sm ${
+        bold ? "bg-muted/50 font-semibold" : "font-medium"
+      }`}
+    >
+      <span>{label}</span>
+      <span>{fmt(value)}</span>
+    </div>
   );
 }
 
@@ -117,32 +211,30 @@ export function ReportsClient() {
           <CardHeader>
             <CardTitle className="text-lg">Profit &amp; Loss</CardTitle>
           </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-24">Code</TableHead>
-                  <TableHead>Account</TableHead>
-                  <TableHead className="text-right">Amount</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                <Section title="Revenue" rows={report?.revenueAccounts ?? []} />
-                <TableRow className="font-medium">
-                  <TableCell colSpan={2}>Total revenue</TableCell>
-                  <TableCell className="text-right">{fmt(report?.revenue ?? 0)}</TableCell>
-                </TableRow>
-                <Section title="Expenses" rows={report?.expenseAccounts ?? []} />
-                <TableRow className="font-medium">
-                  <TableCell colSpan={2}>Total expenses</TableCell>
-                  <TableCell className="text-right">{fmt(report?.expenses ?? 0)}</TableCell>
-                </TableRow>
-                <TableRow className="bg-muted/50 font-semibold">
-                  <TableCell colSpan={2}>Net income</TableCell>
-                  <TableCell className="text-right">{fmt(report?.netIncome ?? 0)}</TableCell>
-                </TableRow>
-              </TableBody>
-            </Table>
+          <CardContent className="space-y-3">
+            <div>
+              <p className="mb-1 text-sm font-semibold">Revenue</p>
+              <DataTable
+                columns={reportAccountColumns}
+                data={(report?.revenueAccounts ?? []) as ReportAccountRow[]}
+                dense
+                paginated={false}
+                emptyMessage="No revenue accounts"
+              />
+            </div>
+            <TotalRow label="Total revenue" value={report?.revenue ?? 0} />
+            <div>
+              <p className="mb-1 text-sm font-semibold">Expenses</p>
+              <DataTable
+                columns={reportAccountColumns}
+                data={(report?.expenseAccounts ?? []) as ReportAccountRow[]}
+                dense
+                paginated={false}
+                emptyMessage="No expense accounts"
+              />
+            </div>
+            <TotalRow label="Total expenses" value={report?.expenses ?? 0} />
+            <TotalRow label="Net income" value={report?.netIncome ?? 0} bold />
           </CardContent>
         </Card>
       ) : type === "balance_sheet" ? (
@@ -150,33 +242,34 @@ export function ReportsClient() {
           <CardHeader>
             <CardTitle className="text-lg">Balance Sheet</CardTitle>
           </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-24">Code</TableHead>
-                  <TableHead>Account</TableHead>
-                  <TableHead className="text-right">Balance</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                <Section title="Assets" rows={report?.assetAccounts ?? []} />
-                <TableRow className="font-medium">
-                  <TableCell colSpan={2}>Total assets</TableCell>
-                  <TableCell className="text-right">{fmt(report?.totalAssets ?? 0)}</TableCell>
-                </TableRow>
-                <Section title="Liabilities" rows={report?.liabilityAccounts ?? []} />
-                <TableRow className="font-medium">
-                  <TableCell colSpan={2}>Total liabilities</TableCell>
-                  <TableCell className="text-right">{fmt(report?.totalLiabilities ?? 0)}</TableCell>
-                </TableRow>
-                <Section title="Equity" rows={report?.equityAccounts ?? []} />
-                <TableRow className="font-medium">
-                  <TableCell colSpan={2}>Total equity</TableCell>
-                  <TableCell className="text-right">{fmt(report?.totalEquity ?? 0)}</TableCell>
-                </TableRow>
-              </TableBody>
-            </Table>
+          <CardContent className="space-y-3">
+            <p className="text-sm font-semibold">Assets</p>
+            <DataTable
+              columns={reportAccountColumns}
+              data={(report?.assetAccounts ?? []) as ReportAccountRow[]}
+              dense
+              paginated={false}
+              emptyMessage="No asset accounts"
+            />
+            <TotalRow label="Total assets" value={report?.totalAssets ?? 0} />
+            <p className="text-sm font-semibold">Liabilities</p>
+            <DataTable
+              columns={reportAccountColumns}
+              data={(report?.liabilityAccounts ?? []) as ReportAccountRow[]}
+              dense
+              paginated={false}
+              emptyMessage="No liability accounts"
+            />
+            <TotalRow label="Total liabilities" value={report?.totalLiabilities ?? 0} />
+            <p className="text-sm font-semibold">Equity</p>
+            <DataTable
+              columns={reportAccountColumns}
+              data={(report?.equityAccounts ?? []) as ReportAccountRow[]}
+              dense
+              paginated={false}
+              emptyMessage="No equity accounts"
+            />
+            <TotalRow label="Total equity" value={report?.totalEquity ?? 0} />
           </CardContent>
         </Card>
       ) : type === "trial_balance" ? (
@@ -193,26 +286,12 @@ export function ReportsClient() {
             </div>
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-24">Code</TableHead>
-                  <TableHead>Account</TableHead>
-                  <TableHead className="text-right">Debit</TableHead>
-                  <TableHead className="text-right">Credit</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {(report?.rows ?? []).map((r: any) => (
-                  <TableRow key={r.code + r.name}>
-                    <TableCell className="font-mono text-xs">{r.code}</TableCell>
-                    <TableCell>{r.name}</TableCell>
-                    <TableCell className="text-right">{r.debit ? fmt(r.debit) : "—"}</TableCell>
-                    <TableCell className="text-right">{r.credit ? fmt(r.credit) : "—"}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <DataTable
+              columns={trialBalanceColumns}
+              data={(report?.rows ?? []) as TrialBalanceRow[]}
+              pageSize={25}
+              emptyMessage="No accounts to show"
+            />
           </CardContent>
         </Card>
       ) : (
@@ -221,42 +300,14 @@ export function ReportsClient() {
             <CardTitle className="text-lg">General Ledger</CardTitle>
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Entry</TableHead>
-                  <TableHead>Account</TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead className="text-right">Debit</TableHead>
-                  <TableHead className="text-right">Credit</TableHead>
-                  <TableHead className="text-right">Balance</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {(report ?? []).length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
-                      No ledger entries.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  (report ?? []).map((l: any, i: number) => (
-                    <TableRow key={i}>
-                      <TableCell>{new Date(l.date).toLocaleDateString()}</TableCell>
-                      <TableCell className="font-mono text-xs">{l.entryNumber}</TableCell>
-                      <TableCell>
-                        <span className="font-mono text-xs">{l.accountCode}</span> {l.accountName}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">{l.description ?? l.reference ?? "—"}</TableCell>
-                      <TableCell className="text-right">{l.debit ? fmt(l.debit) : "—"}</TableCell>
-                      <TableCell className="text-right">{l.credit ? fmt(l.credit) : "—"}</TableCell>
-                      <TableCell className="text-right font-medium">{fmt(l.runningBalance)}</TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
+            <DataTable
+              columns={ledgerColumns}
+              data={(report ?? []) as LedgerRow[]}
+              filterKeys={["entryNumber", "accountCode", "accountName", "description", "reference"]}
+              searchPlaceholder="Search ledger…"
+              emptyMessage="No ledger entries"
+              pageSize={25}
+            />
           </CardContent>
         </Card>
       )}
