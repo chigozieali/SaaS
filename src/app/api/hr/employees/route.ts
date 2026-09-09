@@ -2,6 +2,7 @@ import { z } from "zod";
 import { getApiContext, apiOk, apiError } from "@/lib/api-utils";
 import { db } from "@/lib/prisma";
 import { auditLog } from "@/lib/audit";
+import { provisionEmployeeAccount } from "@/lib/provision";
 
 const employeeSchema = z.object({
   firstName: z.string().min(1),
@@ -56,7 +57,7 @@ export async function POST(req: Request) {
   const employeeCode = `EMP-${String(count + 1).padStart(4, "0")}`;
 
   try {
-    const employee = await db.$transaction(async (tx) => {
+    const result = await db.$transaction(async (tx) => {
       const emp = await tx.employee.create({
         data: {
           organizationId: ctx.organizationId,
@@ -90,19 +91,27 @@ export async function POST(req: Request) {
         });
       }
 
-      return emp;
-    });
+      const account = await provisionEmployeeAccount(tx, {
+        organizationId: ctx.organizationId,
+        employeeId: emp.id,
+        firstName: emp.firstName,
+        lastName: emp.lastName,
+        email: emp.email,
+      });
+
+      return { employee: emp, account };
+    }, { timeout: 30_000 });
 
     await auditLog({
       organizationId: ctx.organizationId,
       userId: ctx.userId,
       action: "create",
       entity: "employee",
-      entityId: employee.id,
+      entityId: result.employee.id,
       metadata: { employeeCode },
     });
 
-    return apiOk({ employee }, 201);
+    return apiOk({ employee: result.employee, account: result.account }, 201);
   } catch (error) {
     console.error(error);
     return apiError("Failed to create employee", 500);

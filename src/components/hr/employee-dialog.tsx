@@ -88,6 +88,16 @@ export function EmployeeDialog({ open, onOpenChange, onSaved }: EmployeeDialogPr
         toast.error(data?.message ?? "Failed to create employee");
         return;
       }
+      const data = await res.json().catch(() => null);
+      const { account } = data ?? {};
+      if (account?.status === "created") {
+        toast.success(
+          `Employee created. Login: ${account.email} / Password: ${account.password}`,
+          { duration: 9000 }
+        );
+      } else {
+        toast.success("Employee created");
+      }
       onSaved();
     } catch {
       toast.error("Failed to create employee");
