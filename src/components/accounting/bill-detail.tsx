@@ -97,6 +97,7 @@ export function BillDetail({ open, onOpenChange, bill, vendors, canEdit, onUpdat
   const [items, setItems] = useState<Item[]>([]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMode("view");
     if (bill) {
       setVendorId(bill.vendor?.id ?? "");

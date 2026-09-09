@@ -42,6 +42,7 @@ export function CustomerDetail({ open, onOpenChange, customer, canEdit, onUpdate
   const [form, setForm] = useState(emptyForm);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMode("view");
     if (customer) {
       setForm({

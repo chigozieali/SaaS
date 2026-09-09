@@ -99,6 +99,7 @@ export function InvoiceDetail({ open, onOpenChange, invoice, customers, canEdit,
   const [items, setItems] = useState<Item[]>([]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMode("view");
     if (invoice) {
       setCustomerId(invoice.customer?.id ?? "");

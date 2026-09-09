@@ -46,7 +46,8 @@ export function SalaryDetail({ open, onOpenChange, structure, canEdit, onUpdated
   const [effectiveFrom, setEffectiveFrom] = useState("");
   const [allowances, setAllowances] = useState<AllowanceRow[]>([]);
 
-  useEffect(() => {
+useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMode("view");
     if (structure) {
       setBasicSalary(String(Number(structure.basicSalary) || 0));

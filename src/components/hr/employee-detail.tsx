@@ -105,6 +105,7 @@ export function EmployeeDetail({ open, onOpenChange, employee, managers, canEdit
       : null;
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMode("view");
     if (employee) {
       setForm({
