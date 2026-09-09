@@ -99,7 +99,8 @@ export async function seedChartOfAccounts(organizationId: string): Promise<void>
           isSystem: true,
         },
       })
-    )
+    ),
+    { timeout: 60_000 }
   );
 }
 

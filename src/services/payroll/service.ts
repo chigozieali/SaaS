@@ -109,7 +109,7 @@ export async function computePayrollRun(runId: string, organizationId: string) {
       totalDeductions,
       totalNet,
     };
-  });
+  }, { timeout: 120_000 });
 }
 
 export async function finalizePayrollRun(runId: string, organizationId: string, userId: string) {
@@ -159,5 +159,5 @@ export async function finalizePayrollRun(runId: string, organizationId: string, 
     });
 
     return updated;
-  });
+  }, { timeout: 120_000 });
 }

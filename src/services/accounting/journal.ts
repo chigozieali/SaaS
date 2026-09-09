@@ -80,7 +80,7 @@ export async function postJournalEntry(params: {
     });
 
     return entry;
-  });
+  }, { timeout: 120_000 });
 }
 
 export async function buildPayrollJournal(params: {
@@ -184,5 +184,5 @@ export async function postPayrollToAccounting(params: {
     });
 
     return entry.id;
-  });
+  }, { timeout: 120_000 });
 }
