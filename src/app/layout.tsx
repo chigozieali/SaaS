@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "LedgerHR — Accounting + HR + Payroll",
+  title: "Business Suite - Accounting, HR and Payroll Management",
   description:
     "Production-minded multi-tenant accounting, HR and payroll management for small and medium businesses.",
 };
