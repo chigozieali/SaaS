@@ -9,6 +9,7 @@ import { PendingApprovalsCard } from "@/components/dashboard/pending-approvals";
 import { UpcomingReceivablesCard } from "@/components/dashboard/receivables-card";
 import { PayrollSummaryCard } from "@/components/dashboard/payroll-summary";
 import { RecentActivityCard } from "@/components/dashboard/recent-activity";
+import { EmployeeDashboard } from "@/components/dashboard/employee-dashboard";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +29,27 @@ function SectionSkeleton({ className }: { className: string }) {
 
 export default async function DashboardPage() {
   const ctx = await requireOrg("dashboard.view");
+  const isAdmin = ctx.permissions.has("employees.view");
+
+  if (!isAdmin) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+          <p className="text-sm text-muted-foreground">
+            Welcome to {ctx.organization.name}. Here is your personal overview.
+          </p>
+        </div>
+        <Suspense fallback={<StatsSkeleton />}>
+          <EmployeeDashboard
+            organizationId={ctx.organizationId}
+            currency={ctx.organization.currency}
+            email={ctx.user.email}
+          />
+        </Suspense>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

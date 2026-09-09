@@ -2,7 +2,7 @@
 
 import useSWR from "swr";
 import { useState } from "react";
-import { Plus } from "lucide-react";
+import { Eye, Plus } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/modules/page-header";
@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { DataTable } from "@/components/ui/data-table";
+import { formatMoney } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -71,6 +72,7 @@ type AttendanceRow = {
   checkOut: string | null;
   hoursWorked: number | null;
   status: string;
+  employee: { firstName: string; lastName: string } | null;
 };
 
 type LeaveRow = {
@@ -82,6 +84,26 @@ type LeaveRow = {
   reason: string | null;
   leaveType: { name: string };
   coveringFor: { id: string; firstName: string; lastName: string } | null;
+};
+
+type LeaveBalanceRow = {
+  leaveTypeId: string;
+  name: string;
+  allowed: number;
+  taken: number;
+  pending: number;
+  remaining: number;
+};
+
+type PayslipRow = {
+  id: string;
+  periodName: string;
+  grossPay: string;
+  totalDeductions: string;
+  netPay: string;
+  breakdown: Record<string, unknown>;
+  issuedAt: string | null;
+  createdAt: string;
 };
 
 type TeamMember = {
@@ -97,7 +119,11 @@ type MyRecordsData = {
   attendance: AttendanceRow[];
   leaves: LeaveRow[];
   leaveTypes: { id: string; name: string; daysAllowed: number; isPaid: boolean }[];
+  leaveBalance: LeaveBalanceRow[];
+  payslips: PayslipRow[];
   team: TeamMember[];
+  salary: { id: string; basicSalary: number; allowances: Record<string, number> } | null;
+  currency: string;
 };
 
 function inLeave(leave: LeaveRow): boolean {
@@ -121,12 +147,21 @@ export function MyRecordsClient() {
   const [saving, setSaving] = useState(false);
   const [leaveTypeId, setLeaveTypeId] = useState("");
   const [coveringForId, setCoveringForId] = useState("");
+  const [payslip, setPayslip] = useState<PayslipRow | null>(null);
 
   const me = data?.me ?? null;
   const attendance = data?.attendance ?? [];
   const leaves = data?.leaves ?? [];
   const leaveTypes = data?.leaveTypes ?? [];
+  const leaveBalance = data?.leaveBalance ?? [];
+  const payslips = data?.payslips ?? [];
   const team = data?.team ?? [];
+  const salary = data?.salary ?? null;
+  const currency = data?.currency ?? "NGN";
+
+  const allowancesTotal = salary
+    ? Object.values(salary.allowances ?? {}).reduce((a, b) => a + Number(b || 0), 0)
+    : 0;
 
   const attendanceColumns: ColumnDef<AttendanceRow>[] = [
     {
@@ -134,6 +169,21 @@ export function MyRecordsClient() {
       id: "date",
       header: "Date",
       cell: ({ row }) => <span>{fmtDate(row.original.date)}</span>,
+    },
+    {
+      id: "record",
+      header: "Record",
+      cell: ({ row }) =>
+        row.original.employee ? (
+          <span>
+            Covering –{" "}
+            <span className="font-medium">
+              {row.original.employee.firstName} {row.original.employee.lastName}
+            </span>
+          </span>
+        ) : (
+          <span className="text-muted-foreground">Own</span>
+        ),
     },
     {
       accessorKey: "checkIn",
@@ -227,12 +277,107 @@ export function MyRecordsClient() {
     },
   ];
 
+  const balanceColumns: ColumnDef<LeaveBalanceRow>[] = [
+    {
+      accessorKey: "name",
+      header: "Leave type",
+      cell: ({ row }) => <span className="font-medium">{row.original.name}</span>,
+    },
+    {
+      accessorFn: (r) => r.allowed,
+      id: "allowed",
+      header: "Allowed",
+    },
+    {
+      accessorFn: (r) => r.taken,
+      id: "taken",
+      header: "Taken",
+      cell: ({ row }) => <span>{row.original.taken.toFixed(1)}</span>,
+    },
+    {
+      accessorFn: (r) => r.pending,
+      id: "pending",
+      header: "Pending",
+      cell: ({ row }) => <span>{row.original.pending.toFixed(1)}</span>,
+    },
+    {
+      accessorFn: (r) => r.remaining,
+      id: "remaining",
+      header: "Remaining",
+      cell: ({ row }) => (
+        <span className="font-semibold">
+          {row.original.remaining.toFixed(1)}
+          {row.original.remaining <= 0 ? (
+            <Badge variant="destructive" className="ml-2">
+              Exhausted
+            </Badge>
+          ) : row.original.remaining <= Math.ceil(row.original.allowed * 0.2) ? (
+            <Badge variant="warning" className="ml-2">
+              Low
+            </Badge>
+          ) : null}
+        </span>
+      ),
+    },
+  ];
+
+  const payslipColumns: ColumnDef<PayslipRow>[] = [
+    {
+      accessorFn: (p) => new Date(p.createdAt).getTime(),
+      id: "createdAt",
+      header: "Issued",
+      cell: ({ row }) => <span>{fmtDate(row.original.createdAt)}</span>,
+    },
+    {
+      accessorKey: "periodName",
+      header: "Period",
+      cell: ({ row }) => <span className="font-medium">{row.original.periodName}</span>,
+    },
+    {
+      accessorFn: (p) => Number(p.grossPay),
+      id: "gross",
+      header: "Gross pay",
+      cell: ({ row }) => <span>{formatMoney(Number(row.original.grossPay), currency)}</span>,
+    },
+    {
+      accessorFn: (p) => Number(p.totalDeductions),
+      id: "deductions",
+      header: "Deductions",
+      cell: ({ row }) => <span>{formatMoney(Number(row.original.totalDeductions), currency)}</span>,
+    },
+    {
+      accessorFn: (p) => Number(p.netPay),
+      id: "net",
+      header: "Net pay",
+      cell: ({ row }) => (
+        <span className="font-semibold">
+          {formatMoney(Number(row.original.netPay), currency)}
+        </span>
+      ),
+    },
+    {
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      meta: { headerClassName: "text-right", cellClassName: "text-right" },
+      cell: ({ row }) => (
+        <Button size="sm" variant="ghost" className="h-7" onClick={() => setPayslip(row.original)}>
+          <Eye className="h-3 w-3" /> Details
+        </Button>
+      ),
+    },
+  ];
+
   const teamColumns: ColumnDef<TeamMember>[] = [
     {
       accessorFn: (m) => `${m.firstName} ${m.lastName}`,
       id: "member",
       header: "Member",
-      cell: ({ row }) => <span className="font-medium">{row.original.firstName} {row.original.lastName}</span>,
+      cell: ({ row }) => (
+        <span className="font-medium">
+          {row.original.firstName} {row.original.lastName}
+        </span>
+      ),
     },
     {
       accessorFn: (m) => m.position?.title ?? "",
@@ -334,9 +479,47 @@ export function MyRecordsClient() {
     );
   }
 
+  const totalAllowed = leaveBalance.reduce((a, b) => a + b.allowed, 0);
+  const totalRemaining = leaveBalance.reduce((a, b) => a + b.remaining, 0);
+  const totalTaken = leaveBalance.reduce((a, b) => a + b.taken, 0);
+
   return (
     <div className="space-y-6">
       <PageHeader title="My Records" description="Your attendance, leave and team." />
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Card className="p-4">
+          <p className="text-xs text-muted-foreground">Leave used ({new Date().getFullYear()})</p>
+          <p className="mt-1 text-2xl font-bold">
+            {totalTaken.toFixed(1)}
+            <span className="text-sm font-normal text-muted-foreground">
+              {" "}
+              / {totalAllowed.toFixed(1)} days
+            </span>
+          </p>
+        </Card>
+        <Card className="p-4">
+          <p className="text-xs text-muted-foreground">Leave remaining</p>
+          <p className="mt-1 text-2xl font-bold">{totalRemaining.toFixed(1)}</p>
+          <p className="text-xs text-muted-foreground">days this year</p>
+        </Card>
+        <Card className="p-4">
+          <p className="text-xs text-muted-foreground">Pending approvals</p>
+          <p className="mt-1 text-2xl font-bold">
+            {leaves.filter((l) => l.status === "pending").length}
+          </p>
+          <p className="text-xs text-muted-foreground">requests in review</p>
+        </Card>
+        <Card className="p-4">
+          <p className="text-xs text-muted-foreground">Latest net pay</p>
+          <p className="mt-1 text-2xl font-bold">
+            {payslips.length
+              ? formatMoney(Number(payslips[0].netPay), currency)
+              : "—"}
+          </p>
+          <p className="text-xs text-muted-foreground">{payslips[0]?.periodName ?? "no payslips yet"}</p>
+        </Card>
+      </div>
 
       <Card className="p-6">
         <h2 className="mb-4 text-sm font-semibold">
@@ -359,6 +542,23 @@ export function MyRecordsClient() {
           </DetailField>
         </DetailGrid>
       </Card>
+
+      <div className="space-y-2">
+        <h2 className="text-sm font-semibold">Leave Balance</h2>
+        {leaveBalance.length === 0 ? (
+          <EmptyState title="No leave types" description="Leave types will appear here." />
+        ) : (
+          <Card className="overflow-hidden p-2">
+            <DataTable
+              columns={balanceColumns}
+              data={leaveBalance}
+              paginated={false}
+              dense
+              emptyMessage="No leave types"
+            />
+          </Card>
+        )}
+      </div>
 
       <div className="space-y-2">
         <div className="flex items-center justify-between">
@@ -402,12 +602,33 @@ export function MyRecordsClient() {
       </div>
 
       <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold">My Payslips</h2>
+          {salary ? (
+            <p className="text-xs text-muted-foreground">
+              Monthly gross: {formatMoney(salary.basicSalary + allowancesTotal, currency)}
+            </p>
+          ) : null}
+        </div>
+        {payslips.length === 0 ? (
+          <EmptyState title="No payslips yet" description="Payslips appear after payroll runs are approved." />
+        ) : (
+          <Card className="overflow-hidden p-2">
+            <DataTable
+              columns={payslipColumns}
+              data={payslips}
+              paginated={false}
+              dense
+              emptyMessage="No payslips"
+            />
+          </Card>
+        )}
+      </div>
+
+      <div className="space-y-2">
         <h2 className="text-sm font-semibold">My Team</h2>
         {team.length === 0 ? (
-          <EmptyState
-            title="No team assigned"
-            description="You are not assigned to a department yet."
-          />
+          <EmptyState title="No team assigned" description="You are not assigned to a department yet." />
         ) : (
           <Card className="overflow-hidden p-2">
             <DataTable
@@ -485,6 +706,51 @@ export function MyRecordsClient() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!payslip} onOpenChange={(o) => !o && setPayslip(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{payslip?.periodName}</DialogTitle>
+            <DialogDescription>Payslip issued {payslip ? fmtDate(payslip.createdAt) : ""}</DialogDescription>
+          </DialogHeader>
+          {payslip && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <p className="text-xs text-muted-foreground">Gross pay</p>
+                  <p className="font-semibold">{formatMoney(Number(payslip.grossPay), currency)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Deductions</p>
+                  <p className="font-semibold">
+                    {formatMoney(Number(payslip.totalDeductions), currency)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Net pay</p>
+                  <p className="font-semibold">{formatMoney(Number(payslip.netPay), currency)}</p>
+                </div>
+              </div>
+              {Object.entries(payslip.breakdown ?? {}).length > 0 && (
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Breakdown</p>
+                  {Object.entries(payslip.breakdown).map(([key, value]) => (
+                    <div
+                      key={key}
+                      className="flex items-center justify-between text-sm"
+                    >
+                      <span className="capitalize text-muted-foreground">
+                        {key.replace(/([A-Z])/g, " $1").trim()}
+                      </span>
+                      <span>{String(value)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

@@ -81,7 +81,6 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
   Manager: [
     PERMISSIONS.dashboard.view,
     PERMISSIONS.employees.self,
-    PERMISSIONS.employees.view,
     PERMISSIONS.departments.view,
     PERMISSIONS.leave.view,
     PERMISSIONS.leave.approve,

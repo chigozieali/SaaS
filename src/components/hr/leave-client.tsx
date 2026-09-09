@@ -48,9 +48,9 @@ type LeaveRow = {
   coveringFor: { firstName: string; lastName: string } | null;
 };
 
-export function LeaveClient() {
+export function LeaveClient({ canManage = true }: { canManage?: boolean }) {
   const { data, mutate } = useSWR("/api/hr/leave", fetcher);
-  const { data: empData } = useSWR("/api/hr/employees", fetcher);
+  const { data: empData } = useSWR(canManage ? "/api/hr/employees" : null, fetcher);
   const { data: typeData } = useSWR("/api/hr/leave-types", fetcher);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -70,13 +70,13 @@ export function LeaveClient() {
     const days = Math.max(1, Math.round((new Date(end).getTime() - new Date(start).getTime()) / 86400000) + 1);
 
     const payload = {
-      employeeId,
+      ...(canManage ? { employeeId } : {}),
       leaveTypeId,
       startDate: start,
       endDate: end,
       days,
       reason: formData.get("reason") ?? undefined,
-      coveringForId: coveringForId || undefined,
+      ...(canManage ? { coveringForId: coveringForId || undefined } : {}),
     };
 
     setSaving(true);
@@ -233,21 +233,23 @@ export function LeaveClient() {
             <DialogDescription>Submit a new leave request for an employee.</DialogDescription>
           </DialogHeader>
           <form onSubmit={onSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label>Employee</Label>
-              <Select value={employeeId || undefined} onValueChange={setEmployeeId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select employee" />
-                </SelectTrigger>
-                <SelectContent>
-                  {employees.map((e: { id: string; firstName: string; lastName: string }) => (
-                    <SelectItem key={e.id} value={e.id}>
-                      {e.firstName} {e.lastName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {canManage && (
+              <div className="space-y-2">
+                <Label>Employee</Label>
+                <Select value={employeeId || undefined} onValueChange={setEmployeeId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select employee" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {employees.map((e: { id: string; firstName: string; lastName: string }) => (
+                      <SelectItem key={e.id} value={e.id}>
+                        {e.firstName} {e.lastName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="space-y-2">
               <Label>Leave type</Label>
               <Select value={leaveTypeId || undefined} onValueChange={setLeaveTypeId}>
@@ -263,23 +265,25 @@ export function LeaveClient() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
-              <Label>Covering colleague (optional)</Label>
-              <Select value={coveringForId || undefined} onValueChange={setCoveringForId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select covering employee" />
-                </SelectTrigger>
-                <SelectContent>
-                  {employees
-                    .filter((e: { id: string }) => e.id !== employeeId)
-                    .map((e: { id: string; firstName: string; lastName: string }) => (
-                      <SelectItem key={e.id} value={e.id}>
-                        {e.firstName} {e.lastName}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {canManage && (
+              <div className="space-y-2">
+                <Label>Covering colleague (optional)</Label>
+                <Select value={coveringForId || undefined} onValueChange={setCoveringForId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select covering employee" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {employees
+                      .filter((e: { id: string }) => e.id !== employeeId)
+                      .map((e: { id: string; firstName: string; lastName: string }) => (
+                        <SelectItem key={e.id} value={e.id}>
+                          {e.firstName} {e.lastName}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="startDate">Start date</Label>
