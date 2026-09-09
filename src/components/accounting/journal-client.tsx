@@ -2,7 +2,7 @@
 
 import useSWR from "swr";
 import { useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, Eye } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/modules/page-header";
@@ -27,77 +27,96 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { JournalDetail, type JournalEntryRow } from "@/components/accounting/journal-detail";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 type Line = { accountCode: string; description: string; debit: string; credit: string };
 
-type JournalLineRow = {
-  id: string;
-  description: string | null;
-  debit: number;
-  credit: number;
-  account: { code: string; name: string };
-};
-
-const lineColumns: ColumnDef<JournalLineRow>[] = [
-  {
-    accessorFn: (l) => `${l.account.code} ${l.account.name}`,
-    id: "account",
-    header: "Account",
-    cell: ({ row }) => (
-      <span>
-        <span className="font-mono text-xs">{row.original.account.code}</span> ·{" "}
-        {row.original.account.name}
-      </span>
-    ),
-  },
-  {
-    accessorFn: (l) => l.description ?? "",
-    id: "description",
-    header: "Description",
-    cell: ({ row }) => (
-      <span className="text-muted-foreground">{row.original.description ?? "—"}</span>
-    ),
-  },
-  {
-    accessorFn: (l) => Number(l.debit),
-    id: "debit",
-    header: "Debit",
-    meta: { headerClassName: "text-right", cellClassName: "text-right" },
-    cell: ({ row }) =>
-      Number(row.original.debit) ? (
-        <span>{Number(row.original.debit).toLocaleString()}</span>
-      ) : (
-        <span>—</span>
-      ),
-  },
-  {
-    accessorFn: (l) => Number(l.credit),
-    id: "credit",
-    header: "Credit",
-    meta: { headerClassName: "text-right", cellClassName: "text-right" },
-    cell: ({ row }) =>
-      Number(row.original.credit) ? (
-        <span>{Number(row.original.credit).toLocaleString()}</span>
-      ) : (
-        <span>—</span>
-      ),
-  },
-];
+const totals = (entry: JournalEntryRow) => ({
+  debit: entry.lines.reduce((s, l) => s + Number(l.debit), 0),
+  credit: entry.lines.reduce((s, l) => s + Number(l.credit), 0),
+});
 
 export function JournalClient() {
   const { data, mutate } = useSWR("/api/accounting/journal", fetcher);
   const { data: acctData } = useSWR("/api/accounting/accounts", fetcher);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [selected, setSelected] = useState<JournalEntryRow | null>(null);
   const [lines, setLines] = useState<Line[]>([
     { accountCode: "", description: "", debit: "", credit: "" },
     { accountCode: "", description: "", debit: "", credit: "" },
   ]);
 
-  const entries = data?.entries ?? [];
+  const entries = (data?.entries ?? []) as JournalEntryRow[];
   const accounts = acctData?.accounts ?? [];
+
+  const columns: ColumnDef<JournalEntryRow>[] = [
+    {
+      accessorKey: "entryNumber",
+      header: "Entry",
+      cell: ({ row }) => <span className="font-mono text-xs">{row.original.entryNumber}</span>,
+    },
+    {
+      accessorFn: (entry) => new Date(entry.date).getTime(),
+      id: "date",
+      header: "Date",
+      cell: ({ row }) => <span>{new Date(row.original.date).toLocaleDateString()}</span>,
+    },
+    {
+      accessorFn: (entry) => entry.reference ?? entry.description ?? "",
+      id: "reference",
+      header: "Reference",
+      cell: ({ row }) => (
+        <span className="text-muted-foreground">{row.original.reference ?? "—"}</span>
+      ),
+    },
+    {
+      accessorKey: "description",
+      header: "Description",
+      cell: ({ row }) => (
+        <span className="text-muted-foreground">{row.original.description ?? "—"}</span>
+      ),
+    },
+    {
+      accessorKey: "source",
+      header: "Source",
+      cell: ({ row }) => <span>{row.original.source ?? "—"}</span>,
+    },
+    {
+      accessorFn: (entry) => totals(entry).debit,
+      id: "debit",
+      header: "Debit",
+      meta: { headerClassName: "text-right", cellClassName: "text-right" },
+      cell: ({ row }) => <span>{totals(row.original).debit.toLocaleString()}</span>,
+    },
+    {
+      accessorFn: (entry) => totals(entry).credit,
+      id: "credit",
+      header: "Credit",
+      meta: { headerClassName: "text-right", cellClassName: "text-right" },
+      cell: ({ row }) => <span>{totals(row.original).credit.toLocaleString()}</span>,
+    },
+    {
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      meta: { headerClassName: "text-right", cellClassName: "text-right" },
+      cell: ({ row }) => (
+        <div className="flex items-center justify-end">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => setSelected(row.original)}
+          >
+            <Eye className="h-4 w-4" />
+          </Button>
+        </div>
+      ),
+    },
+  ];
 
   function setLine(idx: number, patch: Partial<Line>) {
     setLines((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
@@ -158,35 +177,23 @@ export function JournalClient() {
           }
         />
       ) : (
-        <div className="space-y-4">
-          {entries.map((entry: Record<string, any>) => {
-            const debit = entry.lines.reduce((s: number, l: any) => s + Number(l.debit), 0);
-            const credit = entry.lines.reduce((s: number, l: any) => s + Number(l.credit), 0);
-            return (
-              <Card key={entry.id} className="overflow-hidden">
-                <div className="flex items-center justify-between border-b px-6 py-3">
-                  <div>
-                    <p className="font-semibold">{entry.entryNumber}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {new Date(entry.date).toLocaleDateString()} · {entry.description ?? entry.reference ?? "—"}
-                    </p>
-                  </div>
-                  <div className="text-right text-sm">
-                    <p>Dr {debit.toLocaleString()}</p>
-                    <p>Cr {credit.toLocaleString()}</p>
-                  </div>
-                </div>
-                <DataTable
-                  columns={lineColumns}
-                  data={(entry.lines ?? []) as JournalLineRow[]}
-                  dense
-                  paginated={false}
-                />
-              </Card>
-            );
-          })}
-        </div>
+        <Card className="overflow-hidden p-2">
+          <DataTable
+            columns={columns}
+            data={entries}
+            filterKeys={["entryNumber", "reference", "description", "source"]}
+            searchPlaceholder="Search journal entries…"
+            emptyMessage="No entries match your search"
+            pageSize={10}
+          />
+        </Card>
       )}
+
+      <JournalDetail
+        open={!!selected}
+        onOpenChange={(o) => !o && setSelected(null)}
+        entry={selected}
+      />
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
