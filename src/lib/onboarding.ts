@@ -86,6 +86,26 @@ export async function seedDefaultRoles(organizationId: string): Promise<void> {
   }
 }
 
+// Reset every system role to the defaults in DEFAULT_ROLE_PERMISSIONS.
+// Idempotent: safe to run after permission definition changes.
+export async function syncSystemRolePermissions(): Promise<void> {
+  const roles = await db.organizationRole.findMany({
+    where: { name: { in: Object.keys(DEFAULT_ROLE_PERMISSIONS) } },
+  });
+  for (const role of roles) {
+    const keys = DEFAULT_ROLE_PERMISSIONS[role.name];
+    if (!keys) continue;
+    await db.rolePermission.deleteMany({ where: { roleId: role.id } });
+    for (const key of keys) {
+      await db.rolePermission.upsert({
+        where: { roleId_permissionKey: { roleId: role.id, permissionKey: key } },
+        update: {},
+        create: { roleId: role.id, permissionKey: key },
+      });
+    }
+  }
+}
+
 export async function seedChartOfAccounts(organizationId: string): Promise<void> {
   await db.$transaction(
     DEFAULT_CHART_OF_ACCOUNTS.map((acc) =>

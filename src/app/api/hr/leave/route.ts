@@ -2,6 +2,10 @@ import { z } from "zod";
 import { getApiContext, apiOk, apiError } from "@/lib/api-utils";
 import { db } from "@/lib/prisma";
 import { auditLog } from "@/lib/audit";
+import { hasPermission } from "@/lib/permissions";
+
+const employeeSelect = { id: true, firstName: true, lastName: true, employeeCode: true };
+const coveringSelect = { id: true, firstName: true, lastName: true };
 
 export async function GET() {
   const res = await getApiContext("leave.view");
@@ -11,8 +15,9 @@ export async function GET() {
   const leaves = await db.leave.findMany({
     where: { employee: { organizationId: ctx.organizationId } },
     include: {
-      employee: { select: { id: true, firstName: true, lastName: true, employeeCode: true } },
+      employee: { select: employeeSelect },
       leaveType: true,
+      coveringFor: { select: coveringSelect },
     },
     orderBy: { createdAt: "desc" },
   });
@@ -20,12 +25,13 @@ export async function GET() {
 }
 
 const createSchema = z.object({
-  employeeId: z.string().min(1),
+  employeeId: z.string().optional(),
   leaveTypeId: z.string().min(1),
   startDate: z.string().min(1),
   endDate: z.string().min(1),
   days: z.number(),
   reason: z.string().optional(),
+  coveringForId: z.string().optional().nullable(),
 });
 
 export async function POST(req: Request) {
@@ -37,19 +43,46 @@ export async function POST(req: Request) {
   const parsed = createSchema.safeParse(body);
   if (!parsed.success) return apiError(parsed.error.issues[0]?.message ?? "Invalid input");
 
+  // Employees can only submit leave for themselves; managers/admins may create for others.
+  const canManage = hasPermission(ctx.permissions, "employees.view");
+  let targetEmployeeId = parsed.data.employeeId;
+  if (!canManage) {
+    const selfEmployee = await db.employee.findFirst({
+      where: { organizationId: ctx.organizationId, email: ctx.user.email ?? "" },
+    });
+    if (!selfEmployee) {
+      return apiError(
+        "No employee record linked to your account. Ask an administrator to match your employee email to your login email.",
+        403
+      );
+    }
+    targetEmployeeId = selfEmployee.id;
+  }
+
   const employee = await db.employee.findFirst({
-    where: { id: parsed.data.employeeId, organizationId: ctx.organizationId },
+    where: { id: targetEmployeeId, organizationId: ctx.organizationId },
   });
   if (!employee) return apiError("Employee not found", 404);
 
+  if (parsed.data.coveringForId) {
+    if (parsed.data.coveringForId === employee.id) {
+      return apiError("An employee cannot cover for themselves");
+    }
+    const covering = await db.employee.findFirst({
+      where: { id: parsed.data.coveringForId, organizationId: ctx.organizationId },
+    });
+    if (!covering) return apiError("Covering employee not found", 404);
+  }
+
   const leave = await db.leave.create({
     data: {
-      employeeId: parsed.data.employeeId,
+      employeeId: employee.id,
       leaveTypeId: parsed.data.leaveTypeId,
       startDate: new Date(parsed.data.startDate),
       endDate: new Date(parsed.data.endDate),
       days: parsed.data.days,
       reason: parsed.data.reason || null,
+      coveringForId: parsed.data.coveringForId || null,
       status: "pending",
     },
   });

@@ -5,6 +5,7 @@ export const PERMISSIONS = {
     view: "dashboard.view",
   },
   employees: {
+    self: "employees.self",
     view: "employees.view",
     create: "employees.create",
     edit: "employees.edit",
@@ -79,6 +80,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
   Admin: ALL_PERMISSIONS,
   Manager: [
     PERMISSIONS.dashboard.view,
+    PERMISSIONS.employees.self,
     PERMISSIONS.employees.view,
     PERMISSIONS.departments.view,
     PERMISSIONS.leave.view,
@@ -89,10 +91,8 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
   ],
   Employee: [
     PERMISSIONS.dashboard.view,
-    PERMISSIONS.employees.view,
-    PERMISSIONS.leave.view,
+    PERMISSIONS.employees.self,
     PERMISSIONS.leave.create,
-    PERMISSIONS.attendance.view,
   ],
   Accountant: [
     PERMISSIONS.dashboard.view,

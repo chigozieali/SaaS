@@ -2,6 +2,7 @@ import {
   LayoutDashboard,
   Users,
   UserPlus,
+  UserRound,
   Building2,
   CalendarDays,
   Clock,
@@ -34,6 +35,7 @@ export const navigation: NavItem[] = [
     title: "HR",
     icon: Users,
     children: [
+      { title: "My Records", href: "/hr/my-records", icon: UserRound, permission: "employees.self" },
       { title: "Employees", href: "/hr/employees", icon: UserPlus, permission: "employees.view" },
       { title: "Departments", href: "/hr/departments", icon: Building2, permission: "departments.view" },
       { title: "Leave", href: "/hr/leave", icon: CalendarDays, permission: "leave.view" },

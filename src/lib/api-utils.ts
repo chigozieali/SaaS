@@ -8,6 +8,7 @@ export type ApiContext = {
   organizationId: string;
   permissions: Set<string>;
   isOwner: boolean;
+  user: { id: string; name?: string | null; email?: string | null };
 };
 
 export async function getApiContext(
@@ -39,6 +40,11 @@ export async function getApiContext(
       organizationId: membership.organizationId,
       permissions,
       isOwner: membership.isOwner,
+      user: {
+        id: session.user.id,
+        name: session.user.name,
+        email: session.user.email,
+      },
     },
   };
 }

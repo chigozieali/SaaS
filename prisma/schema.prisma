@@ -197,6 +197,7 @@ model Employee {
   managedDepartments Department[] @relation("DeptManager")
   documents       EmployeeDocument[]
   leaves          Leave[]
+  coveringLeaves  Leave[] @relation("LeaveCover")
   attendances     Attendance[]
   salaryStructures SalaryStructure[]
   payrollLines    PayrollRunLine[]
@@ -233,21 +234,23 @@ model LeaveType {
 }
 
 model Leave {
-  id           String   @id @default(cuid())
-  employeeId   String
-  leaveTypeId  String
-  startDate    DateTime
-  endDate      DateTime
-  days         Decimal  @db.Decimal(6, 1)
-  reason       String?
-  status       String   @default("pending")
-  approvedById String?
-  approvedAt   DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id            String   @id @default(cuid())
+  employeeId    String
+  leaveTypeId   String
+  startDate     DateTime
+  endDate       DateTime
+  days          Decimal  @db.Decimal(6, 1)
+  reason        String?
+  status        String   @default("pending")
+  coveringForId String?
+  approvedById  String?
+  approvedAt    DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  employee  Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  leaveType LeaveType @relation(fields: [leaveTypeId], references: [id], onDelete: Restrict)
+  employee    Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveType   LeaveType @relation(fields: [leaveTypeId], references: [id], onDelete: Restrict)
+  coveringFor Employee? @relation("LeaveCover", fields: [coveringForId], references: [id], onDelete: SetNull)
 
   @@index([employeeId])
 }

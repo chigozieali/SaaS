@@ -45,6 +45,7 @@ type LeaveRow = {
   status: string;
   employee: { firstName: string; lastName: string };
   leaveType: { name: string };
+  coveringFor: { firstName: string; lastName: string } | null;
 };
 
 export function LeaveClient() {
@@ -55,6 +56,7 @@ export function LeaveClient() {
   const [saving, setSaving] = useState(false);
   const [employeeId, setEmployeeId] = useState("");
   const [leaveTypeId, setLeaveTypeId] = useState("");
+  const [coveringForId, setCoveringForId] = useState("");
 
   const leaves = data?.leaves ?? [];
   const employees = empData?.employees ?? [];
@@ -74,6 +76,7 @@ export function LeaveClient() {
       endDate: end,
       days,
       reason: formData.get("reason") ?? undefined,
+      coveringForId: coveringForId || undefined,
     };
 
     setSaving(true);
@@ -149,6 +152,18 @@ export function LeaveClient() {
         <Badge variant={badgeVariant[row.original.status] ?? "outline"}>
           {row.original.status}
         </Badge>
+      ),
+    },
+    {
+      accessorFn: (l) => l.coveringFor ? `${l.coveringFor.firstName} ${l.coveringFor.lastName}` : "",
+      id: "covering",
+      header: "Covering",
+      cell: ({ row }) => (
+        <span>
+          {row.original.coveringFor
+            ? `${row.original.coveringFor.firstName} ${row.original.coveringFor.lastName}`
+            : "—"}
+        </span>
       ),
     },
     {
@@ -245,6 +260,23 @@ export function LeaveClient() {
                       {t.name}
                     </SelectItem>
                   ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Covering colleague (optional)</Label>
+              <Select value={coveringForId || undefined} onValueChange={setCoveringForId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select covering employee" />
+                </SelectTrigger>
+                <SelectContent>
+                  {employees
+                    .filter((e: { id: string }) => e.id !== employeeId)
+                    .map((e: { id: string; firstName: string; lastName: string }) => (
+                      <SelectItem key={e.id} value={e.id}>
+                        {e.firstName} {e.lastName}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>
