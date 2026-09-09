@@ -86,22 +86,33 @@ export async function seedDefaultRoles(organizationId: string): Promise<void> {
   }
 }
 
-// Reset every system role to the defaults in DEFAULT_ROLE_PERMISSIONS.
+// Reset every system role to the defaults in DEFAULT_ROLE_PERMISSIONS,
+// creating any missing system roles (e.g. "Super Admin") along the way.
 // Idempotent: safe to run after permission definition changes.
 export async function syncSystemRolePermissions(): Promise<void> {
-  const roles = await db.organizationRole.findMany({
-    where: { name: { in: Object.keys(DEFAULT_ROLE_PERMISSIONS) } },
+  await seedPermissions();
+  const orgs = await db.organization.findMany({
+    select: { id: true },
+    where: { roles: { some: {} } },
   });
-  for (const role of roles) {
-    const keys = DEFAULT_ROLE_PERMISSIONS[role.name];
-    if (!keys) continue;
-    await db.rolePermission.deleteMany({ where: { roleId: role.id } });
-    for (const key of keys) {
-      await db.rolePermission.upsert({
-        where: { roleId_permissionKey: { roleId: role.id, permissionKey: key } },
-        update: {},
-        create: { roleId: role.id, permissionKey: key },
+  for (const org of orgs) {
+    for (const [roleName, keys] of Object.entries(DEFAULT_ROLE_PERMISSIONS)) {
+      const existing = await db.organizationRole.findUnique({
+        where: { organizationId_name: { organizationId: org.id, name: roleName } },
       });
+      const role = existing
+        ? existing
+        : await db.organizationRole.create({
+            data: { organizationId: org.id, name: roleName, isSystem: true },
+          });
+      await db.rolePermission.deleteMany({ where: { roleId: role.id } });
+      for (const key of keys) {
+        await db.rolePermission.upsert({
+          where: { roleId_permissionKey: { roleId: role.id, permissionKey: key } },
+          update: {},
+          create: { roleId: role.id, permissionKey: key },
+        });
+      }
     }
   }
 }

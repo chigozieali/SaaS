@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { getApiContext, apiOk, apiError } from "@/lib/api-utils";
 import { db } from "@/lib/prisma";
 import { auditLog } from "@/lib/audit";
+import { hasPermission } from "@/lib/permissions";
 
 export async function GET() {
   const res = await getApiContext("settings.users");
@@ -18,12 +19,30 @@ export async function GET() {
     orderBy: { createdAt: "asc" },
   });
 
+  const grants = await db.userPermission.findMany({
+    where: { organizationId: ctx.organizationId },
+    select: { userId: true, permissionKey: true },
+  });
+  const grantsByUser = new Map<string, string[]>();
+  for (const g of grants) {
+    const list = grantsByUser.get(g.userId) ?? [];
+    list.push(g.permissionKey);
+    grantsByUser.set(g.userId, list);
+  }
+
   const roles = await db.organizationRole.findMany({
     where: { organizationId: ctx.organizationId },
     orderBy: { name: "asc" },
   });
 
-  return apiOk({ members, roles });
+  return apiOk({
+    members: members.map((m) => ({
+      ...m,
+      grants: grantsByUser.get(m.userId) ?? [],
+    })),
+    roles,
+    canSuper: hasPermission(ctx.permissions, "settings.super"),
+  });
 }
 
 const inviteSchema = z.object({
@@ -41,6 +60,21 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   const parsed = inviteSchema.safeParse(body);
   if (!parsed.success) return apiError(parsed.error.issues[0]?.message ?? "Invalid input");
+
+  // Only a Super Admin can assign the Super Admin role (or grant settings.super).
+  if (parsed.data.roleId) {
+    const role = await db.organizationRole.findFirst({
+      where: { id: parsed.data.roleId, organizationId: ctx.organizationId },
+      include: { permissions: true },
+    });
+    const isSuperRole =
+      role &&
+      (role.name === "Super Admin" ||
+        role.permissions.some((rp) => rp.permissionKey === "settings.super"));
+    if (isSuperRole && !hasPermission(ctx.permissions, "settings.super")) {
+      return apiError("Only a Super Admin can assign this role", 403);
+    }
+  }
 
   const email = parsed.data.email.toLowerCase();
 

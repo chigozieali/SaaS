@@ -31,6 +31,7 @@ model Organization {
 
   createdBy        User?                 @relation("OrgCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   memberships      UserOrganization[]
+  userPermissions  UserPermission[]
   roles            OrganizationRole[]
   departments      Department[]
   positions        Position[]
@@ -65,9 +66,11 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  organizations  UserOrganization[]
-  createdOrgs    Organization[]     @relation("OrgCreatedBy")
-  auditLogs      AuditLog[]         @relation("AuditActor")
+  organizations   UserOrganization[]
+  createdOrgs     Organization[]     @relation("OrgCreatedBy")
+  auditLogs       AuditLog[]         @relation("AuditActor")
+  permissionGrants UserPermission[]
+  grantsMade      UserPermission[]   @relation("UserPermissionGrantedBy")
 }
 
 // Join table for user -> organization with role
@@ -111,7 +114,8 @@ model Permission {
   description String?
   category    String
 
-  rolePermissions RolePermission[]
+  rolePermissions  RolePermission[]
+  userPermissions  UserPermission[]
 }
 
 model RolePermission {
@@ -123,6 +127,24 @@ model RolePermission {
   permission Permission       @relation(fields: [permissionKey], references: [key], onDelete: Cascade)
 
   @@unique([roleId, permissionKey])
+}
+
+// Direct per-user permission grants (beyond role permissions), managed by Super Admin.
+model UserPermission {
+  id             String   @id @default(cuid())
+  userId         String
+  organizationId String
+  permissionKey  String
+  grantedById    String?
+  grantedAt      DateTime @default(now())
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  permission   Permission   @relation(fields: [permissionKey], references: [key], onDelete: Cascade)
+  grantedBy    User?        @relation("UserPermissionGrantedBy", fields: [grantedById], references: [id], onDelete: SetNull)
+
+  @@unique([userId, organizationId, permissionKey])
+  @@index([organizationId])
 }
 
 // =====================================================================

@@ -2,7 +2,7 @@
 
 import useSWR from "swr";
 import { useState } from "react";
-import { UserPlus } from "lucide-react";
+import { ShieldCheck, UserPlus } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/modules/page-header";
@@ -13,6 +13,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { DataTable } from "@/components/ui/data-table";
+import { PERMISSION_CATEGORIES } from "@/lib/permission-constants";
 import {
   Dialog,
   DialogContent,
@@ -42,17 +43,52 @@ type MemberRow = {
   id: string;
   createdAt: string;
   role?: { name: string } | null;
-  user: { name: string | null; email: string; isActive: boolean };
+  grants: string[];
+  user: { id: string; name: string | null; email: string; isActive: boolean };
 };
 
-export function UsersClient() {
+export function UsersClient({ canSuper = false }: { canSuper?: boolean }) {
   const { data, mutate } = useSWR("/api/admin/users", fetcher);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [roleId, setRoleId] = useState("");
+  const [permMember, setPermMember] = useState<MemberRow | null>(null);
+  const [permKeys, setPermKeys] = useState<string[]>([]);
+  const [permSaving, setPermSaving] = useState(false);
 
-  const members = data?.members ?? [];
+  const members = (data?.members ?? []) as MemberRow[];
   const roles = data?.roles ?? [];
+  const effectiveCanSuper = data?.canSuper ?? canSuper;
+
+  function openPermissions(member: MemberRow) {
+    setPermMember(member);
+    setPermKeys(member.grants ?? []);
+  }
+
+  function toggleKey(key: string) {
+    setPermKeys((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+    );
+  }
+
+  async function savePermissions() {
+    if (!permMember) return;
+    setPermSaving(true);
+    const res = await fetch(`/api/admin/users/${permMember.user.id}/permissions`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ permissionKeys: permKeys }),
+    });
+    setPermSaving(false);
+    if (res.ok) {
+      toast.success("Permissions updated");
+      mutate();
+      setPermMember(null);
+    } else {
+      const data = await res.json().catch(() => null);
+      toast.error(data?.message ?? "Failed to update permissions");
+    }
+  }
 
   const columns: ColumnDef<MemberRow>[] = [
     {
@@ -81,6 +117,17 @@ export function UsersClient() {
       cell: ({ row }) => <Badge variant="secondary">{row.original.role?.name ?? "No role"}</Badge>,
     },
     {
+      accessorFn: (m) => m.grants.length,
+      id: "grants",
+      header: "Extra permissions",
+      cell: ({ row }) =>
+        row.original.grants.length > 0 ? (
+          <Badge variant="info">{row.original.grants.length} granted</Badge>
+        ) : (
+          <span className="text-xs text-muted-foreground">—</span>
+        ),
+    },
+    {
       accessorFn: (m) => (m.user.isActive ? "Active" : "Inactive"),
       id: "status",
       header: "Status",
@@ -102,6 +149,25 @@ export function UsersClient() {
       ),
     },
   ];
+
+  if (effectiveCanSuper) {
+    columns.push({
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      meta: { headerClassName: "text-right", cellClassName: "text-right" },
+      cell: ({ row }) => (
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7"
+          onClick={() => openPermissions(row.original)}
+        >
+          <ShieldCheck className="h-3 w-3" /> Permissions
+        </Button>
+      ),
+    });
+  }
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -191,6 +257,50 @@ export function UsersClient() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!permMember} onOpenChange={(o) => !o && setPermMember(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Extra permissions</DialogTitle>
+            <DialogDescription>
+              Grant individual permissions to{" "}
+              <span className="font-medium">{permMember?.user.name ?? permMember?.user.email}</span>{" "}
+              in addition to their role. Role permissions cannot be removed here — only extra
+              grants.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[50vh] space-y-4 overflow-y-auto pr-1">
+            {Object.entries(PERMISSION_CATEGORIES).map(([category, keys]) => (
+              <div key={category}>
+                <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {category}
+                </p>
+                <div className="space-y-1">
+                  {keys.map((key) => (
+                    <label key={key} className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-sm hover:bg-muted">
+                      <input
+                        type="checkbox"
+                        checked={permKeys.includes(key)}
+                        onChange={() => toggleKey(key)}
+                        className="accent-primary"
+                      />
+                      <span>{key}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setPermMember(null)}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={savePermissions} disabled={permSaving}>
+              {permSaving ? "Saving…" : "Save permissions"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
