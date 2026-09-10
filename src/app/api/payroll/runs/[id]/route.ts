@@ -66,15 +66,25 @@ export async function PATCH(
           data: { status: "submitted", submittedAt: new Date(), submittedById: ctx.userId },
         });
         break;
-      case "approve":
+      case "approve": {
         if (run.status !== "submitted") {
           return apiError("Only submitted runs can be approved");
         }
-        result = await db.payrollRun.update({
-          where: { id },
-          data: { status: "approved", approvedAt: new Date(), approvedById: ctx.userId },
+        // Approving a run auto-creates the payroll accrual journal in GL.
+        result = await db.$transaction(async (tx) => {
+          const updated = await tx.payrollRun.update({
+            where: { id },
+            data: { status: "approved", approvedAt: new Date(), approvedById: ctx.userId },
+          });
+          const entryId = await postPayrollToAccounting({
+            organizationId: ctx.organizationId,
+            runId: id,
+            userId: ctx.userId,
+          });
+          return { ...updated, journalEntryId: entryId };
         });
         break;
+      }
       case "finalize": {
         if (run.status !== "approved") {
           return apiError("Only approved runs can be finalized");

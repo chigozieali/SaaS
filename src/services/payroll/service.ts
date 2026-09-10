@@ -33,7 +33,8 @@ async function collectAdjustments(
   grossBase: number,
   workingDays: number,
   periodStart: Date,
-  periodEnd: Date
+  periodEnd: Date,
+  runId?: string
 ): Promise<AdjustmentContext> {
   const ctx: AdjustmentContext = {
     overtimeHours: 0,
@@ -45,7 +46,7 @@ async function collectAdjustments(
   };
   if (!workingDays) return ctx;
 
-  const [attendanceRows, leaves, enrollments, emp] = await Promise.all([
+  const [attendanceRows, leaves, enrollments, emp, loans, payrollClaims] = await Promise.all([
     tx.attendance.findMany({ where: { employeeId, date: { gte: periodStart, lte: periodEnd } } }),
     tx.leave.findMany({
       where: {
@@ -61,6 +62,14 @@ async function collectAdjustments(
       include: { plan: true },
     }),
     tx.employee.findUnique({ where: { id: employeeId } }),
+    tx.staffLoan.findMany({
+      where: { employeeId, status: "active", outstandingBalance: { gt: 0 } },
+    }),
+    runId
+      ? tx.expense.findMany({
+          where: { employeeId, status: "approved", reimbursementMethod: "payroll", payrollRunId: runId, paidAt: null },
+        })
+      : Promise.resolve([]),
   ]);
 
   for (const row of attendanceRows) {
@@ -94,6 +103,22 @@ async function collectAdjustments(
   }
   if (emp?.nhiaPct != null) {
     ctx.deductionOverrides["nhia"] = Math.round((grossBase * Number(emp.nhiaPct)) / 100 * 100) / 100;
+  }
+
+  // Active staff loans: monthly repayment recovered from gross/net pay.
+  const loanRepayment = loans.reduce((s, loan) => {
+    const scheduled = Number(loan.monthlyDeduction ?? 0);
+    return s + Math.min(scheduled, Number(loan.outstandingBalance));
+  }, 0);
+  if (loanRepayment > 0) {
+    ctx.extraDeductions.push({ name: "Loan Repayment", amount: Math.round(loanRepayment * 100) / 100 });
+  }
+
+  // Approved expense claims paid through this payroll run: net pay top-up
+  // (negative deduction) that simultaneously clears the reimbursement payable.
+  const claimsTotal = payrollClaims.reduce((s, c) => s + Number(c.amount), 0);
+  if (claimsTotal > 0) {
+    ctx.extraDeductions.push({ name: "Expense Reimbursement", amount: -Math.round(claimsTotal * 100) / 100 });
   }
 
   return ctx;
@@ -159,7 +184,8 @@ export async function computePayrollRun(runId: string, organizationId: string) {
         grossBase,
         workingDays,
         period.startDate,
-        period.endDate
+        period.endDate,
+        runId
       );
 
       const overtimePay =

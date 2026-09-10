@@ -11,7 +11,14 @@ export async function GET() {
   const [expenses, categories] = await Promise.all([
     db.expense.findMany({
       where: { organizationId: ctx.organizationId },
-      include: { category: true, vendor: true },
+      include: {
+        category: true,
+        vendor: true,
+        employee: {
+          select: { id: true, firstName: true, lastName: true, employeeCode: true },
+        },
+        payrollRun: { include: { period: true } },
+      },
       orderBy: { date: "desc" },
     }),
     db.expenseCategory.findMany({ where: { organizationId: ctx.organizationId } }),
@@ -25,6 +32,9 @@ const expenseSchema = z.object({
   date: z.string().min(1),
   description: z.string().optional(),
   vendorId: z.string().optional().nullable(),
+  employeeId: z.string().optional().nullable(),
+  reimbursementMethod: z.enum(["payroll", "bank"]).optional().nullable(),
+  receiptUrl: z.string().url().optional().nullable(),
 });
 
 export async function POST(req: Request) {
@@ -36,6 +46,14 @@ export async function POST(req: Request) {
   const parsed = expenseSchema.safeParse(body);
   if (!parsed.success) return apiError(parsed.error.issues[0]?.message ?? "Invalid input");
 
+  const isEmployeeClaim = Boolean(parsed.data.employeeId);
+  if (isEmployeeClaim) {
+    const employee = await db.employee.findFirst({
+      where: { id: parsed.data.employeeId!, organizationId: ctx.organizationId },
+    });
+    if (!employee) return apiError("Employee not found", 404);
+  }
+
   const expense = await db.expense.create({
     data: {
       organizationId: ctx.organizationId,
@@ -44,6 +62,11 @@ export async function POST(req: Request) {
       date: new Date(parsed.data.date),
       description: parsed.data.description || null,
       vendorId: parsed.data.vendorId || null,
+      employeeId: parsed.data.employeeId || null,
+      reimbursementMethod: isEmployeeClaim
+        ? (parsed.data.reimbursementMethod ?? "bank")
+        : null,
+      receiptUrl: parsed.data.receiptUrl || null,
       status: "pending",
       createdById: ctx.userId,
     },
@@ -54,6 +77,7 @@ export async function POST(req: Request) {
     action: "create",
     entity: "expense",
     entityId: expense.id,
+    metadata: { employeeId: expense.employeeId },
   });
   return apiOk({ expense }, 201);
 }
