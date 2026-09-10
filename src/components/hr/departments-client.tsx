@@ -2,7 +2,7 @@
 
 import useSWR from "swr";
 import { useState } from "react";
-import { Plus } from "lucide-react";
+import { Plus, Users } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/modules/page-header";
@@ -15,6 +15,7 @@ import { DataTable } from "@/components/ui/data-table";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -23,11 +24,22 @@ import { Badge } from "@/components/ui/badge";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
+type DepartmentEmployee = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  employeeCode: string | null;
+  email: string | null;
+  isActive: boolean;
+  position: { id: string; title: string } | null;
+};
+
 type DepartmentRow = {
   id: string;
   name: string;
   code: string | null;
   manager?: { firstName: string; lastName: string } | null;
+  employees: DepartmentEmployee[];
   _count: { employees: number };
 };
 
@@ -35,6 +47,7 @@ export function DepartmentsClient() {
   const { data, mutate } = useSWR("/api/hr/departments", fetcher);
   const departments: DepartmentRow[] = data?.departments ?? [];
   const [open, setOpen] = useState(false);
+  const [viewing, setViewing] = useState<DepartmentRow | null>(null);
   const [saving, setSaving] = useState(false);
 
   const columns: ColumnDef<DepartmentRow>[] = [
@@ -67,6 +80,22 @@ export function DepartmentsClient() {
       meta: { headerClassName: "text-right", cellClassName: "text-right" },
       cell: ({ row }) => (
         <Badge variant="secondary">{row.original._count.employees}</Badge>
+      ),
+    },
+    {
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      meta: { headerClassName: "text-right", cellClassName: "text-right" },
+      cell: ({ row }) => (
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7"
+          onClick={() => setViewing(row.original)}
+        >
+          <Users className="h-3 w-3" /> View
+        </Button>
       ),
     },
   ];
@@ -125,6 +154,54 @@ export function DepartmentsClient() {
           />
         </Card>
       )}
+
+      <Dialog open={viewing !== null} onOpenChange={(o) => !o && setViewing(null)}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{viewing?.name}</DialogTitle>
+            <DialogDescription>
+              {viewing?._count.employees ?? 0} employee{(viewing?._count.employees ?? 0) === 1 ? "" : "s"} ·{" "}
+              {viewing?.manager
+                ? `Manager: ${viewing.manager.firstName} ${viewing.manager.lastName}`
+                : "No manager assigned"}
+            </DialogDescription>
+          </DialogHeader>
+          {viewing && viewing.employees.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No employees in this department yet.</p>
+          ) : (
+            <div className="divide-y rounded-md border">
+              {viewing?.employees.map((emp) => (
+                <div key={emp.id} className="flex items-center justify-between gap-4 px-3 py-2.5">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">
+                      {emp.firstName} {emp.lastName}
+                      {!emp.isActive && (
+                        <Badge variant="destructive" className="ml-2">
+                          Inactive
+                        </Badge>
+                      )}
+                    </p>
+                    {emp.position && (
+                      <p className="truncate text-xs text-muted-foreground">{emp.position.title}</p>
+                    )}
+                  </div>
+                  <div className="shrink-0 text-right">
+                    {emp.employeeCode && (
+                      <p className="text-xs text-muted-foreground">{emp.employeeCode}</p>
+                    )}
+                    {emp.email && <p className="text-xs text-muted-foreground">{emp.email}</p>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setViewing(null)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>

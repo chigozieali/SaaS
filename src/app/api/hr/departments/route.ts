@@ -18,6 +18,18 @@ export async function GET() {
     where: { organizationId: ctx.organizationId },
     include: {
       manager: { select: { id: true, firstName: true, lastName: true } },
+      employees: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          employeeCode: true,
+          email: true,
+          isActive: true,
+          position: { select: { id: true, title: true } },
+        },
+        orderBy: { firstName: "asc" },
+      },
       _count: { select: { employees: true } },
     },
     orderBy: { name: "asc" },
