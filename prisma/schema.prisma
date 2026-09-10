@@ -74,6 +74,10 @@ model User {
   auditLogs       AuditLog[]         @relation("AuditActor")
   permissionGrants UserPermission[]
   grantsMade      UserPermission[]   @relation("UserPermissionGrantedBy")
+  journalsCreated JournalEntry[]     @relation("JournalCreated")
+  journalsApproved JournalEntry[]    @relation("JournalApproved")
+  journalsPosted  JournalEntry[]     @relation("JournalPosted")
+  journalsReversed JournalEntry[]    @relation("JournalReversed")
 }
 
 // Join table for user -> organization with role
@@ -695,14 +699,29 @@ model JournalEntry {
   status         String   @default("posted")
   source         String?
   createdById    String?
+  approvedById   String?
+  approvedAt     DateTime?
+  postedById     String?
+  postedAt       DateTime?
+  reversedById   String?
+  reversedAt     DateTime?
+  reversalOfId   String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
   organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   period       AccountingPeriod?  @relation(fields: [periodId], references: [id], onDelete: SetNull)
+  createdBy    User?              @relation("JournalCreated", fields: [createdById], references: [id], onDelete: SetNull)
+  approvedBy   User?              @relation("JournalApproved", fields: [approvedById], references: [id], onDelete: SetNull)
+  postedBy     User?              @relation("JournalPosted", fields: [postedById], references: [id], onDelete: SetNull)
+  reversedBy   User?              @relation("JournalReversed", fields: [reversedById], references: [id], onDelete: SetNull)
+  reversalOf   JournalEntry?      @relation("JournalReversal", fields: [reversalOfId], references: [id], onDelete: SetNull)
+  reversals    JournalEntry[]     @relation("JournalReversal")
   lines        JournalEntryLine[]
 
   @@unique([organizationId, entryNumber])
+  @@index([organizationId, status])
+  @@index([date])
 }
 
 model JournalEntryLine {

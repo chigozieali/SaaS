@@ -16,6 +16,7 @@ export async function GET(req: Request) {
   const startParam = url.searchParams.get("start");
   const endParam = url.searchParams.get("end");
   const accountId = url.searchParams.get("accountId") ?? undefined;
+  const search = url.searchParams.get("search") ?? undefined;
 
   const start = startParam ? new Date(startParam) : undefined;
   const end = endParam ? new Date(endParam) : undefined;
@@ -27,7 +28,14 @@ export async function GET(req: Request) {
       case "trial_balance":
         return apiOk({ report: await getTrialBalance(ctx.organizationId) });
       case "general_ledger":
-        return apiOk({ report: await getGeneralLedger(ctx.organizationId, accountId) });
+        return apiOk({
+          report: await getGeneralLedger(ctx.organizationId, {
+            accountId,
+            start,
+            end,
+            search,
+          }),
+        });
       case "pl":
       default:
         return apiOk({ report: await getProfitAndLoss(ctx.organizationId, start, end) });

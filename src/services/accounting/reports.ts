@@ -150,23 +150,58 @@ export async function getTrialBalance(organizationId: string) {
   return { rows, totalDebit, totalCredit, balanced: Math.abs(totalDebit - totalCredit) < 0.01 };
 }
 
-export async function getGeneralLedger(organizationId: string, accountId?: string) {
+export async function getGeneralLedger(
+  organizationId: string,
+  opts: {
+    accountId?: string;
+    start?: Date;
+    end?: Date;
+    search?: string;
+  } = {}
+) {
+  const { accountId, start, end, search } = opts;
   const lines = await db.journalEntryLine.findMany({
     where: {
       ...(accountId ? { accountId } : {}),
-      journalEntry: { is: { organizationId, status: "posted" } },
+      journalEntry: {
+        is: {
+          organizationId,
+          status: "posted",
+          ...(start ? { date: { gte: start } } : {}),
+          ...(end ? { date: { lte: end } } : {}),
+          ...(search
+            ? {
+                OR: [
+                  { reference: { contains: search, mode: "insensitive" } },
+                  { entryNumber: { contains: search, mode: "insensitive" } },
+                  { description: { contains: search, mode: "insensitive" } },
+                ],
+              }
+            : {}),
+        },
+      },
+      ...(search
+        ? {
+            OR: [
+              { description: { contains: search, mode: "insensitive" } },
+              { account: { is: { name: { contains: search, mode: "insensitive" } } } },
+            ],
+          }
+        : {}),
     },
     include: {
       journalEntry: true,
       account: true,
     },
-    orderBy: { journalEntry: { date: "asc" } },
+    orderBy: [{ journalEntry: { date: "asc" } }, { createdAt: "asc" }],
   });
 
   let running = 0;
   return lines.map((line) => {
     running += num(line.debit) - num(line.credit);
     return {
+      entryId: line.journalEntryId,
+      lineId: line.id,
       date: line.journalEntry.date,
       entryNumber: line.journalEntry.entryNumber,
       reference: line.journalEntry.reference,
@@ -175,7 +210,8 @@ export async function getGeneralLedger(organizationId: string, accountId?: strin
       accountName: line.account.name,
       debit: num(line.debit),
       credit: num(line.credit),
-      runningBalance: Math.round(running * 100) / 100,
+      runningBalance: Math.round((num(line.debit) - num(line.credit)) * 100) / 100,
+      cumulativeBalance: Math.round(running * 100) / 100,
     };
   });
 }

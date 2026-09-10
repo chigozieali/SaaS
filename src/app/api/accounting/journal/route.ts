@@ -14,6 +14,12 @@ export async function GET() {
     include: {
       lines: { include: { account: true } },
       period: true,
+      createdBy: { select: { id: true, name: true } },
+      approvedBy: { select: { id: true, name: true } },
+      postedBy: { select: { id: true, name: true } },
+      reversedBy: { select: { id: true, name: true } },
+      reversalOf: { select: { id: true, entryNumber: true, date: true, status: true } },
+      reversals: { select: { id: true, entryNumber: true, date: true, status: true } },
     },
     orderBy: { date: "desc" },
     take: 100,
@@ -53,6 +59,7 @@ export async function POST(req: Request) {
       reference: parsed.data.reference,
       description: parsed.data.description,
       source: "manual",
+      status: "draft",
       createdById: ctx.userId,
       lines: parsed.data.lines,
     });
@@ -60,7 +67,7 @@ export async function POST(req: Request) {
     await auditLog({
       organizationId: ctx.organizationId,
       userId: ctx.userId,
-      action: "post_journal",
+      action: "create_journal",
       entity: "journal_entry",
       entityId: entry.id,
     });

@@ -2,9 +2,11 @@
 
 import useSWR from "swr";
 import { useState } from "react";
+import { Download } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { PageHeader } from "@/components/modules/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -27,8 +29,61 @@ type LedgerRow = {
   reference: string | null;
   debit: number | null;
   credit: number | null;
-  runningBalance: number;
+  cumulativeBalance: number;
 };
+
+function downloadCsv(filename: string, columns: string[], rows: (string | number)[][]) {
+  const esc = (v: string | number) => {
+    const s = String(v ?? "");
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const csv = [columns.map(esc).join(","), ...rows.map((r) => r.map(esc).join(","))].join("\n");
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function exportReport(type: string, report: Record<string, unknown> | null | undefined) {
+  if (!report) return;
+  const today = new Date().toISOString().slice(0, 10);
+  const columns = ["Code", "Account", "Debit", "Credit", "Balance"];
+  const rows: (string | number)[][] = [];
+
+  if (type === "general_ledger") {
+    for (const l of (report as unknown as LedgerRow[])) {
+      rows.push([
+        l.entryNumber,
+        `${l.accountCode} ${l.accountName} · ${l.description ?? l.reference ?? ""}`,
+        l.debit ? fmt(l.debit) : "",
+        l.credit ? fmt(l.credit) : "",
+        fmt(l.cumulativeBalance),
+      ]);
+    }
+  } else {
+    const sections: { label: string; items?: ReportAccountRow[]; total?: number }[] =
+      type === "pl"
+        ? [
+            { label: "Revenue", items: report.revenueAccounts as ReportAccountRow[], total: report.revenue as number },
+            { label: "Expenses", items: report.expenseAccounts as ReportAccountRow[], total: report.expenses as number },
+          ]
+        : [
+            { label: "Assets", items: report.assetAccounts as ReportAccountRow[], total: report.totalAssets as number },
+            { label: "Liabilities", items: report.liabilityAccounts as ReportAccountRow[], total: report.totalLiabilities as number },
+            { label: "Equity", items: report.equityAccounts as ReportAccountRow[], total: report.totalEquity as number },
+          ];
+    for (const section of sections) {
+      rows.push([section.label]);
+      for (const item of section.items ?? []) rows.push([item.code, item.name, "", "", fmt(item.balance)]);
+      rows.push(["", `Total ${section.label}`, "", "", fmt(section.total ?? 0)]);
+    }
+    if (type === "pl") rows.push(["", "Net income", "", "", fmt((report.netIncome as number) ?? 0)]);
+  }
+  downloadCsv(`${type}_${today}.csv`, columns, rows);
+}
 
 const reportAccountColumns: ColumnDef<ReportAccountRow>[] = [
   {
@@ -117,11 +172,11 @@ const ledgerColumns: ColumnDef<LedgerRow>[] = [
     cell: ({ row }) => (row.original.credit ? <span>{fmt(row.original.credit)}</span> : <span>—</span>),
   },
   {
-    accessorFn: (l) => Number(l.runningBalance),
+    accessorFn: (l) => Number(l.cumulativeBalance),
     id: "balance",
     header: "Balance",
     meta: { headerClassName: "text-right", cellClassName: "text-right" },
-    cell: ({ row }) => <span className="font-medium">{fmt(Number(row.original.runningBalance))}</span>,
+    cell: ({ row }) => <span className="font-medium">{fmt(Number(row.original.cumulativeBalance))}</span>,
   },
 ];
 
@@ -143,11 +198,13 @@ export function ReportsClient() {
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
   const [accountId, setAccountId] = useState("");
+  const [search, setSearch] = useState("");
 
   const params = new URLSearchParams({ type });
-  if (start) params.set("start", start);
+  if (start && (type === "pl" || type === "general_ledger")) params.set("start", start);
   if (end) params.set("end", end);
   if (accountId && type === "general_ledger") params.set("accountId", accountId);
+  if (search && type === "general_ledger") params.set("search", search);
 
   const { data, isLoading } = useSWR(`/api/accounting/reports?${params.toString()}`, fetcher);
   const { data: acctData } = useSWR("/api/accounting/accounts", fetcher);
@@ -156,7 +213,14 @@ export function ReportsClient() {
 
   return (
     <div>
-      <PageHeader title="Reports" description="Financial statements generated from posted journal entries." />
+      <PageHeader
+        title="Reports"
+        description="Financial statements generated from posted journal entries."
+      >
+        <Button variant="outline" onClick={() => exportReport(type, report as Record<string, unknown> | null | undefined)}>
+          <Download className="h-4 w-4" /> Export CSV
+        </Button>
+      </PageHeader>
 
       <div className="mb-4 flex flex-wrap items-end gap-4">
         <Tabs value={type} onValueChange={setType}>
@@ -167,7 +231,7 @@ export function ReportsClient() {
             <TabsTrigger value="general_ledger">General Ledger</TabsTrigger>
           </TabsList>
         </Tabs>
-        {type === "pl" && (
+        {(type === "pl" || type === "general_ledger") && (
           <>
             <div className="space-y-1">
               <Label>From (optional)</Label>
@@ -186,21 +250,33 @@ export function ReportsClient() {
           </div>
         )}
         {type === "general_ledger" && (
-          <div className="space-y-1">
-            <Label>Account filter</Label>
-            <select
-              value={accountId}
-              onChange={(e) => setAccountId(e.target.value)}
-              className="h-9 rounded-md border bg-transparent px-3 text-sm"
-            >
-              <option value="">All accounts</option>
-              {accounts.map((a: { id: string; code: string; name: string }) => (
-                <option key={a.id} value={a.id}>
-                  {a.code} · {a.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          <>
+            <div className="space-y-1">
+              <Label>Account filter</Label>
+              <select
+                value={accountId}
+                onChange={(e) => setAccountId(e.target.value)}
+                className="h-9 rounded-md border bg-transparent px-3 text-sm"
+              >
+                <option value="">All accounts</option>
+                {accounts.map((a: { id: string; code: string; name: string }) => (
+                  <option key={a.id} value={a.id}>
+                    {a.code} · {a.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <Label>Search</Label>
+              <Input
+                type="search"
+                placeholder="Reference, description, account…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="h-9 w-64"
+              />
+            </div>
+          </>
         )}
       </div>
 

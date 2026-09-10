@@ -14,6 +14,7 @@ export async function postJournalEntry(params: {
   reference?: string;
   description?: string;
   source?: string;
+  status?: string;
   createdById?: string;
   lines: JournalLineInput[];
 }) {
@@ -64,7 +65,7 @@ export async function postJournalEntry(params: {
         date: params.date,
         reference: params.reference,
         description: params.description,
-        status: "posted",
+        status: params.status ?? "posted",
         source: params.source ?? "manual",
         createdById: params.createdById,
         lines: {

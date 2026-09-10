@@ -27,11 +27,27 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { JournalDetail, type JournalEntryRow } from "@/components/accounting/journal-detail";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 type Line = { accountCode: string; description: string; debit: string; credit: string };
+
+const statusVariant = (status: string) => {
+  switch (status) {
+    case "posted":
+      return "success" as const;
+    case "reversed":
+      return "secondary" as const;
+    case "approved":
+      return "default" as const;
+    case "pending":
+      return "warning" as const;
+    default:
+      return "outline" as const;
+  }
+};
 
 const totals = (entry: JournalEntryRow) => ({
   debit: entry.lines.reduce((s, l) => s + Number(l.debit), 0),
@@ -99,6 +115,13 @@ export function JournalClient() {
       cell: ({ row }) => <span>{totals(row.original).credit.toLocaleString()}</span>,
     },
     {
+      accessorKey: "status",
+      header: "Status",
+      cell: ({ row }) => (
+        <Badge variant={statusVariant(row.original.status)}>{row.original.status}</Badge>
+      ),
+    },
+    {
       id: "actions",
       header: "",
       enableSorting: false,
@@ -149,12 +172,12 @@ export function JournalClient() {
     });
     setSaving(false);
     if (res.ok) {
-      toast.success("Journal entry posted");
+      toast.success("Journal entry saved as draft");
       mutate();
       setOpen(false);
     } else {
       const data = await res.json().catch(() => null);
-      toast.error(data?.message ?? "Failed to post entry");
+      toast.error(data?.message ?? "Failed to save entry");
     }
   }
 
@@ -169,7 +192,7 @@ export function JournalClient() {
       {entries.length === 0 ? (
         <EmptyState
           title="No journal entries"
-          description="Post your first journal entry."
+          description="Create your first journal entry."
           action={
             <Button onClick={() => setOpen(true)}>
               <Plus className="h-4 w-4" /> New Entry
@@ -193,13 +216,17 @@ export function JournalClient() {
         open={!!selected}
         onOpenChange={(o) => !o && setSelected(null)}
         entry={selected}
+        onMutate={mutate}
       />
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>New Journal Entry</DialogTitle>
-            <DialogDescription>Debits and credits must balance to post.</DialogDescription>
+            <DialogDescription>
+              Debits and credits must balance. Entries are saved as drafts, then submitted for
+              approval before posting.
+            </DialogDescription>
           </DialogHeader>
           <form onSubmit={onSubmit} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
@@ -294,7 +321,7 @@ export function JournalClient() {
                 Cancel
               </Button>
               <Button type="submit" disabled={saving}>
-                {saving ? "Posting…" : "Post entry"}
+                {saving ? "Saving…" : "Save draft"}
               </Button>
             </DialogFooter>
           </form>
