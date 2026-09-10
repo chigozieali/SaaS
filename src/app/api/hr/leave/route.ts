@@ -3,6 +3,7 @@ import { getApiContext, apiOk, apiError } from "@/lib/api-utils";
 import { db } from "@/lib/prisma";
 import { auditLog } from "@/lib/audit";
 import { hasPermission } from "@/lib/permissions";
+import { notifyUsersByEmail } from "@/lib/notify";
 
 const employeeSelect = { id: true, firstName: true, lastName: true, employeeCode: true };
 const coveringSelect = { id: true, firstName: true, lastName: true };
@@ -94,5 +95,23 @@ export async function POST(req: Request) {
     entity: "leave",
     entityId: leave.id,
   });
+
+  const worker = await db.employee.findFirst({
+    where: { id: employee.id },
+    select: { email: true, firstName: true, manager: { select: { email: true, firstName: true, lastName: true } } },
+  });
+  await notifyUsersByEmail(ctx.organizationId, [worker?.email ?? ""], {
+    title: "Leave request submitted",
+    message: `Your ${new Date(leave.startDate).toLocaleDateString()} – ${new Date(leave.endDate).toLocaleDateString()} request is awaiting approval.`,
+    type: "info",
+    link: "/hr/my-leave",
+  });
+  await notifyUsersByEmail(ctx.organizationId, [worker?.manager?.email ?? ""], {
+    title: "New leave request to review",
+    message: `${worker?.firstName ?? "An employee"} requests leave from ${new Date(leave.startDate).toLocaleDateString()} to ${new Date(leave.endDate).toLocaleDateString()}.`,
+    type: "info",
+    link: "/hr/leave",
+  });
+
   return apiOk({ leave }, 201);
 }

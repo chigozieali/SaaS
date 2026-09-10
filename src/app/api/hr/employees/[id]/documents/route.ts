@@ -2,6 +2,7 @@ import { z } from "zod";
 import { getApiContext, apiOk, apiError } from "@/lib/api-utils";
 import { db } from "@/lib/prisma";
 import { auditLog } from "@/lib/audit";
+import { notifyUsersByEmail } from "@/lib/notify";
 
 const categories = ["contract", "handbook", "policy", "hr", "payroll", "certificate", "other"] as const;
 
@@ -44,7 +45,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const employee = await db.employee.findFirst({
     where: { id, organizationId: ctx.organizationId },
-    select: { id: true },
+    select: { id: true, email: true, firstName: true, lastName: true },
   });
   if (!employee) return apiError("Employee not found", 404);
 
@@ -58,6 +59,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       notes: parsed.data.notes || null,
     },
   });
+
+  if (parsed.data.category === "policy") {
+    await notifyUsersByEmail(ctx.organizationId, [employee.email ?? ""], {
+      title: "New policy to acknowledge",
+      message: `${employee.firstName}, please review and acknowledge "${parsed.data.name}".`,
+      type: "info",
+      link: "/hr/my-documents",
+    });
+  }
+
   await auditLog({
     organizationId: ctx.organizationId,
     userId: ctx.userId,

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import useSWR from "swr";
 import { useState } from "react";
-import { CalendarCheck2, Pencil, Plane, Landmark, UsersRound, Wallet } from "lucide-react";
+import { CalendarCheck2, Pencil, Plane, Landmark, UsersRound, Wallet, FileText, HeartPulse, Settings, BellRing } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/modules/page-header";
 import { EmptyState } from "@/components/modules/empty-state";
@@ -69,8 +69,12 @@ type MyRecordsData = {
   payslips: { netPay: string; periodName: string }[];
   ytdDeductions: { name: string; amount: number }[];
   overtimeByMonth: { month: string; hours: number }[];
+  documents?: { id: string; name: string; acknowledgedAt: string | null; category: string | null }[];
+  payday: { frequency: string; lastPayDate: string | null; nextPayDate: string | null };
   currency: string;
 };
+
+type NotifRow = { id: string; title: string; message: string | null; isRead: boolean; createdAt: string; link: string | null };
 
 const statusVariant: Record<string, "warning" | "success" | "destructive" | "secondary"> = {
   pending: "warning",
@@ -79,9 +83,13 @@ const statusVariant: Record<string, "warning" | "success" | "destructive" | "sec
 };
 
 const links = [
-  { title: "My Attendance", href: "/hr/my-attendance", icon: CalendarCheck2, desc: "Your attendance and relief coverage" },
+  { title: "My Attendance", href: "/hr/my-attendance", icon: CalendarCheck2, desc: "Your time and relief coverage" },
   { title: "My Leave", href: "/hr/my-leave", icon: Plane, desc: "Leave balance, history and requests" },
   { title: "My Payslips", href: "/hr/my-payslips", icon: Wallet, desc: "Your payslips and salary" },
+  { title: "My Documents", href: "/hr/my-documents", icon: FileText, desc: "Contracts, policies and acknowledgements" },
+  { title: "My Benefits", href: "/hr/my-benefits", icon: HeartPulse, desc: "Enrolled benefits and contributions" },
+  { title: "My Account", href: "/hr/my-account", icon: Settings, desc: "Security and account settings" },
+  { title: "Notifications", href: "/hr/notifications", icon: BellRing, desc: "Your latest updates" },
   { title: "My Team", href: "/hr/my-team", icon: UsersRound, desc: "Colleagues and their leave status" },
 ];
 
@@ -91,13 +99,20 @@ export function MyRecordsClient() {
     "/api/hr/bank-requests",
     fetcher
   );
+  const { data: notifData } = useSWR<{ notifications: NotifRow[]; unreadCount: number }>(
+    "/api/hr/notifications",
+    fetcher
+  );
   const me = data?.me ?? null;
   const leaves = data?.leaves ?? [];
   const leaveBalance = data?.leaveBalance ?? [];
   const payslips = data?.payslips ?? [];
   const ytdDeductions = data?.ytdDeductions ?? [];
   const overtimeByMonth = data?.overtimeByMonth ?? [];
+  const documents = data?.documents ?? [];
   const bankRequests = bankData?.requests ?? [];
+  const notifications = notifData?.notifications ?? [];
+  const unreadCount = notifData?.unreadCount ?? 0;
 
   const [editOpen, setEditOpen] = useState(false);
   const [bankOpen, setBankOpen] = useState(false);
@@ -133,14 +148,31 @@ export function MyRecordsClient() {
   const totalTaken = leaveBalance.reduce((a, b) => a + b.taken, 0);
   const currency = data.currency ?? "NGN";
   const pendingBank = bankRequests.find((r) => r.status === "pending");
+  const pendingLeaveCount = leaves.filter((l) => l.status === "pending").length;
+  const pendingAckCount = documents.filter((d) => !d.acknowledgedAt).length;
+  const nextPayday = data.payday?.nextPayDate
+    ? new Date(data.payday.nextPayDate).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })
+    : null;
+  const payFrequency = (data.payday?.frequency ?? "monthly").replace(/_/g, " ") || "monthly";
+
+  const pendingActions = [
+    { label: "Leave request awaiting approval", count: pendingLeaveCount, href: "/hr/my-leave" },
+    { label: "Bank detail change pending review", count: pendingBank ? 1 : 0, href: "/hr/my-records" },
+    { label: "Policy awaiting acknowledgement", count: pendingAckCount, href: "/hr/my-documents" },
+  ].filter((a) => a.count > 0);
 
   const stats = [
-    { title: `Leave used (${new Date().getFullYear()})`, value: `${totalTaken.toFixed(1)} / ${totalAllowed.toFixed(1)} days` },
-    { title: "Leave remaining", value: `${totalRemaining.toFixed(1)} days` },
-    { title: "Pending approvals", value: String(leaves.filter((l) => l.status === "pending").length) },
+    {
+      title: "Next payday",
+      value: nextPayday ?? "—",
+      sub: `${payFrequency}${data.payday?.lastPayDate ? ` · last ${data.payday.lastPayDate}` : ""}`,
+    },
+    { title: "Leave remaining", value: `${totalRemaining.toFixed(1)} days`, sub: `${totalTaken.toFixed(1)} / ${totalAllowed.toFixed(1)} used` },
+    { title: "Pending actions", value: String(pendingActions.reduce((a, b) => a + b.count, 0)), sub: "Notifications & approvals" },
     {
       title: "Latest net pay",
       value: payslips.length ? formatMoney(Number(payslips[0].netPay), currency) : "—",
+      sub: payslips.length ? payslips[0].periodName : "No payslip yet",
     },
   ];
 
@@ -220,8 +252,74 @@ export function MyRecordsClient() {
           <Card key={s.title} className="p-4">
             <p className="text-xs text-muted-foreground">{s.title}</p>
             <p className="mt-1 text-2xl font-bold">{s.value}</p>
+            {"sub" in s && s.sub ? (
+              <p className="mt-0.5 truncate text-xs capitalize text-muted-foreground">{String(s.sub)}</p>
+            ) : null}
           </Card>
         ))}
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card className="p-6 lg:col-span-1">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-semibold">Pending actions</h2>
+            <Badge variant={pendingActions.length > 0 ? "warning" : "secondary"}>
+              {pendingActions.length}
+            </Badge>
+          </div>
+          {pendingActions.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Nothing needs your attention right now.</p>
+          ) : (
+            <ul className="space-y-2">
+              {pendingActions.map((a) => (
+                <li key={a.label}>
+                  <Link href={a.href} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm transition-colors hover:bg-accent">
+                    <span>{a.label}</span>
+                    <Badge variant="secondary">{a.count}</Badge>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+
+        <Card className="p-6 lg:col-span-2">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-semibold">Recent notifications</h2>
+            <Button variant="ghost" size="sm" className="h-7" asChild>
+              <Link href="/hr/notifications">
+                View all{unreadCount > 0 ? ` (${unreadCount} unread)` : ""}
+              </Link>
+            </Button>
+          </div>
+          {notifications.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Payslips, leave updates and policy acknowledgements will show up here.
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {notifications.slice(0, 5).map((n) => (
+                <li key={n.id}>
+                  <Link
+                    href={n.link ?? "/hr/notifications"}
+                    className={`flex items-start justify-between gap-3 rounded-md border px-3 py-2 text-sm transition-colors hover:bg-accent ${n.isRead ? "opacity-70" : ""}`}
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate font-medium">
+                        {n.title}
+                        {!n.isRead ? <span className="ml-2 inline-block h-2 w-2 rounded-full bg-destructive align-middle" /> : null}
+                      </span>
+                      {n.message ? <span className="block truncate text-muted-foreground">{n.message}</span> : null}
+                      <span className="block text-xs text-muted-foreground">
+                        {new Date(n.createdAt).toLocaleDateString()}
+                      </span>
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">

@@ -21,6 +21,7 @@ import {
   HeartPulse,
   ShieldCheck,
   Landmark,
+  BellRing,
 } from "lucide-react";
 
 export type NavItem = {
@@ -46,6 +47,10 @@ export const navigation: NavItem[] = [
       { title: "My Leave", href: "/hr/my-leave", icon: Plane, permission: "employees.self" },
       { title: "My Payslips", href: "/hr/my-payslips", icon: Wallet, permission: "employees.self" },
       { title: "My Team", href: "/hr/my-team", icon: UsersRound, permission: "employees.self" },
+      { title: "My Documents", href: "/hr/my-documents", icon: FileText, permission: "employees.self" },
+      { title: "My Benefits", href: "/hr/my-benefits", icon: HeartPulse, permission: "employees.self" },
+      { title: "Notifications", href: "/hr/notifications", icon: BellRing, permission: "employees.self" },
+      { title: "My Account", href: "/hr/my-account", icon: Settings, permission: "employees.self" },
       { title: "Bank Requests", href: "/hr/bank-requests", icon: Landmark, permission: "employees.edit" },
       { title: "Employees", href: "/hr/employees", icon: UserPlus, permission: "employees.view" },
       { title: "Departments", href: "/hr/departments", icon: Building2, permission: "departments.view" },

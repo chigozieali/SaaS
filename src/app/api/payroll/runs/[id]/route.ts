@@ -4,6 +4,7 @@ import { db } from "@/lib/prisma";
 import { auditLog } from "@/lib/audit";
 import { finalizePayrollRun } from "@/services/payroll/service";
 import { postPayrollToAccounting } from "@/services/accounting/journal";
+import { notifyUsersByEmail } from "@/lib/notify";
 
 const actionSchema = z.object({
   action: z.enum(["submit", "approve", "finalize", "post", "reopen"]),
@@ -79,6 +80,25 @@ export async function PATCH(
           return apiError("Only approved runs can be finalized");
         }
         result = await finalizePayrollRun(id, ctx.organizationId, ctx.userId);
+
+        const lines = await db.payrollRunLine.findMany({
+          where: { runId: id },
+          select: { employee: { select: { email: true } } },
+        });
+        const period = await db.payrollPeriod.findUnique({
+          where: { id: run.periodId },
+          select: { name: true },
+        });
+        await notifyUsersByEmail(
+          ctx.organizationId,
+          lines.map((l) => l.employee.email ?? ""),
+          {
+            title: "New payslip available",
+            message: `Your payslip for ${period?.name ?? "this period"} is ready to view.`,
+            type: "success",
+            link: "/hr/my-payslips",
+          }
+        );
         break;
       }
       case "post": {

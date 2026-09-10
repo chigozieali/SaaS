@@ -25,6 +25,7 @@ export async function GET() {
       salaryStructures: { where: { isActive: true }, orderBy: { effectiveFrom: "desc" }, take: 1 },
       benefitEnrollments: { where: { isActive: true }, include: { plan: true } },
       documents: { orderBy: { createdAt: "desc" }, take: 20 },
+      acknowledgements: { orderBy: { acknowledgedAt: "desc" }, take: 20 },
     },
   });
 
@@ -47,7 +48,10 @@ export async function GET() {
     }),
     db.leave.findMany({
       where: { employeeId: me.id },
-      include: { leaveType: true, coveringFor: { select: coveringSelect } },
+      include: {
+        leaveType: true,
+        coveringFor: { select: coveringSelect },
+      },
       orderBy: { startDate: "desc" },
     }),
     db.leaveType.findMany({
@@ -75,6 +79,21 @@ export async function GET() {
       take: 12,
     }),
   ]);
+
+  // Approver names for leave rows (Leave uses approvedById without a relation).
+  const approverIds = [...new Set(leaves.map((l) => l.approvedById).filter(Boolean))] as string[];
+  const approvers = approverIds.length
+    ? await db.employee.findMany({
+        where: { id: { in: approverIds } },
+        select: { id: true, firstName: true, lastName: true },
+      })
+    : [];
+  const approverOf = new Map(approvers.map((e) => [e.id, `${e.firstName} ${e.lastName}`.trim()]));
+  const leavesApi = leaves.map((l) => ({
+    ...l,
+    days: Number(l.days),
+    approvedBy: l.approvedById ? { id: l.approvedById, name: approverOf.get(l.approvedById) ?? "—" } : null,
+  }));
 
   // Covering colleagues' attendance while they covered for me.
   const coveringAttendance: Array<{
@@ -213,10 +232,41 @@ export async function GET() {
       }
     : null;
 
+  // Expected payday: latest finalized period's pay date, projected forward one pay cycle.
+  const latestPeriod = await db.payrollPeriod.findFirst({
+    where: { organizationId: ctx.organizationId, status: "finalized", payDate: { not: null } },
+    orderBy: { endDate: "desc" },
+    select: { payDate: true },
+  });
+  const freqMonths = me.payFrequency === "weekly" ? 0 : me.payFrequency === "biweekly" ? 0 : 1;
+  let payday: { frequency: string; lastPayDate: string | null; nextPayDate: string | null } = {
+    frequency: me.payFrequency ?? "monthly",
+    lastPayDate: null,
+    nextPayDate: null,
+  };
+  if (latestPeriod?.payDate) {
+    const lastPayDate = new Date(latestPeriod.payDate.toISOString());
+    const nextPayDate = new Date(lastPayDate);
+    if (freqMonths > 0) {
+      nextPayDate.setMonth(nextPayDate.getMonth() + 1);
+    } else {
+      nextPayDate.setDate(nextPayDate.getDate() + 14);
+    }
+    while (nextPayDate.getTime() <= Date.now()) {
+      if (freqMonths > 0) nextPayDate.setMonth(nextPayDate.getMonth() + 1);
+      else nextPayDate.setDate(nextPayDate.getDate() + 14);
+    }
+    payday = {
+      frequency: me.payFrequency ?? "monthly",
+      lastPayDate: lastPayDate.toISOString().slice(0, 10),
+      nextPayDate: nextPayDate.toISOString().slice(0, 10),
+    };
+  }
+
   return apiOk({
     me,
     attendance,
-    leaves,
+    leaves: leavesApi,
     leaveTypes,
     team,
     leaveBalance,
@@ -226,6 +276,7 @@ export async function GET() {
     documents: me.documents,
     ytdDeductions,
     overtimeByMonth,
+    payday,
     currency,
   });
 }

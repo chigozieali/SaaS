@@ -2,6 +2,7 @@ import { z } from "zod";
 import { getApiContext, apiOk, apiError } from "@/lib/api-utils";
 import { db } from "@/lib/prisma";
 import { auditLog } from "@/lib/audit";
+import { notifyUsersByEmail } from "@/lib/notify";
 
 const actionSchema = z.object({
   status: z.enum(["approved", "rejected", "cancelled"]),
@@ -22,6 +23,7 @@ export async function PATCH(
 
   const leave = await db.leave.findFirst({
     where: { id, employee: { organizationId: ctx.organizationId } },
+    include: { employee: { select: { email: true, firstName: true, lastName: true } } },
   });
   if (!leave) return apiError("Leave request not found", 404);
 
@@ -32,6 +34,19 @@ export async function PATCH(
       approvedById: parsed.data.status === "approved" ? ctx.userId : null,
       approvedAt: parsed.data.status === "approved" ? new Date() : null,
     },
+  });
+
+  const statusLabel =
+    parsed.data.status === "approved"
+      ? "approved"
+      : parsed.data.status === "rejected"
+        ? "rejected"
+        : "cancelled";
+  await notifyUsersByEmail(ctx.organizationId, [leave.employee.email ?? ""], {
+    title: `Leave ${statusLabel}`,
+    message: `Your leave request (${new Date(leave.startDate).toLocaleDateString()} – ${new Date(leave.endDate).toLocaleDateString()}) was ${statusLabel}.`,
+    type: parsed.data.status === "approved" ? "success" : "warning",
+    link: "/hr/my-leave",
   });
 
   await auditLog({

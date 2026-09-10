@@ -49,6 +49,7 @@ type LeaveRow = {
   reason: string | null;
   leaveType: { name: string };
   coveringFor: { id: string; firstName: string; lastName: string } | null;
+  approvedBy: { id: string; name: string } | null;
 };
 
 type LeaveBalanceRow = {
@@ -174,7 +175,38 @@ export function MyLeaveClient() {
         </span>
       ),
     },
+    {
+      accessorFn: (l) => l.approvedBy?.name ?? "",
+      id: "approvedBy",
+      header: "Approved by",
+      cell: ({ row }) => (
+        <span className="text-sm text-muted-foreground">{row.original.approvedBy?.name ?? "—"}</span>
+      ),
+    },
+    {
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      meta: { headerClassName: "text-right", cellClassName: "text-right" },
+      cell: ({ row }) =>
+        row.original.status === "pending" ? (
+          <Button size="sm" variant="outline" className="h-7" onClick={() => cancelLeave(row.original)}>
+            Cancel
+          </Button>
+        ) : null,
+    },
   ];
+
+  async function cancelLeave(leave: LeaveRow) {
+    const res = await fetch(`/api/hr/leave/${leave.id}/cancel`, { method: "POST" });
+    const d = await res.json().catch(() => null);
+    if (res.ok) {
+      toast.success("Leave request cancelled");
+      mutate();
+    } else {
+      toast.error(d?.message ?? "Failed to cancel leave request");
+    }
+  }
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();

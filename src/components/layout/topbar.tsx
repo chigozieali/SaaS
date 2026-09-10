@@ -5,6 +5,7 @@ import { LogOut, Settings, UserRound } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { NotificationBell } from "@/components/layout/notification-bell";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,6 +29,7 @@ export function Topbar({ userName, userEmail, orgName }: TopbarProps) {
         <p className="text-sm font-semibold">{orgName}</p>
         <p className="text-xs text-muted-foreground">Business management suite</p>
       </div>
+      <NotificationBell />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" className="relative h-9 w-9 rounded-full">
@@ -46,15 +48,15 @@ export function Topbar({ userName, userEmail, orgName }: TopbarProps) {
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuItem asChild>
-            <Link href="/administration/settings">
-              <Settings className="h-4 w-4" />
-              Settings
+            <Link href="/hr/my-records">
+              <UserRound className="h-4 w-4" />
+              My Profile
             </Link>
           </DropdownMenuItem>
           <DropdownMenuItem asChild>
-            <Link href="/hr/employees">
-              <UserRound className="h-4 w-4" />
-              My Profile
+            <Link href="/hr/my-account">
+              <Settings className="h-4 w-4" />
+              My Account
             </Link>
           </DropdownMenuItem>
           <DropdownMenuSeparator />

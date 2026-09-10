@@ -2,6 +2,7 @@ import { z } from "zod";
 import { getApiContext, apiOk, apiError } from "@/lib/api-utils";
 import { db } from "@/lib/prisma";
 import { auditLog } from "@/lib/audit";
+import { notifyUsersByEmail } from "@/lib/notify";
 
 export async function GET() {
   const res = await getApiContext("employees.edit");
@@ -69,6 +70,20 @@ export async function PATCH(req: Request) {
     entity: "bank_detail_request",
     entityId: request.id,
     metadata: { status: parsed.data.status },
+  });
+
+  const worker = await db.employee.findFirst({
+    where: { id: request.employeeId },
+    select: { email: true },
+  });
+  await notifyUsersByEmail(ctx.organizationId, [worker?.email ?? ""], {
+    title: parsed.data.status === "approved" ? "Bank details updated" : "Bank change request rejected",
+    message:
+      parsed.data.status === "approved"
+        ? `Your bank details were updated to ${request.bankName} · ${request.bankAccountNumber}.`
+        : `Your request to change bank details was rejected.${parsed.data.reviewNotes ? ` Note: ${parsed.data.reviewNotes}` : ""}`,
+    type: parsed.data.status === "approved" ? "success" : "destructive",
+    link: "/hr/my-records",
   });
 
   return apiOk({ request: updated });
