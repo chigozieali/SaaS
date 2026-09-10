@@ -29,6 +29,7 @@ export function EmployeesClient({ permissions }: { permissions?: Set<string> }) 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selected, setSelected] = useState<EmployeeRow | null>(null);
   const canEdit = hasPermission(permissions, "employees.edit");
+  const canPayroll = hasPermission(permissions, "employees.payroll");
 
   const handleDelete = async (id: string) => {
     const res = await fetch(`/api/hr/employees/${id}`, { method: "DELETE" });
@@ -152,6 +153,7 @@ export function EmployeesClient({ permissions }: { permissions?: Set<string> }) 
       <EmployeeDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
+        canPayroll={canPayroll}
         onSaved={() => {
           toast.success("Employee created");
           mutate();
@@ -165,6 +167,7 @@ export function EmployeesClient({ permissions }: { permissions?: Set<string> }) 
         employee={selected}
         managers={employees}
         canEdit={canEdit}
+        canPayroll={canPayroll}
         onUpdated={(updated) => {
           mutate();
           if (updated) setSelected((prev) => ({ ...prev, ...updated }));

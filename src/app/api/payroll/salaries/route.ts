@@ -40,10 +40,15 @@ export async function POST(req: Request) {
   if (!employee) return apiError("Employee not found", 404);
 
   // deactivate existing active structures
-  await db.salaryStructure.updateMany({
+  const previous = await db.salaryStructure.findFirst({
     where: { employeeId: employee.id, isActive: true },
-    data: { isActive: false, effectiveTo: new Date(parsed.data.effectiveFrom) },
   });
+  if (previous) {
+    await db.salaryStructure.update({
+      where: { id: previous.id },
+      data: { isActive: false, effectiveTo: new Date(parsed.data.effectiveFrom) },
+    });
+  }
 
   const structure = await db.salaryStructure.create({
     data: {
@@ -52,6 +57,20 @@ export async function POST(req: Request) {
       allowances: (parsed.data.allowances ?? {}) as never,
       effectiveFrom: new Date(parsed.data.effectiveFrom),
       isActive: true,
+    },
+  });
+
+  // Record promotion / salary-change history.
+  await db.salaryChange.create({
+    data: {
+      employeeId: employee.id,
+      previousBasic: previous?.basicSalary ?? null,
+      newBasic: parsed.data.basicSalary,
+      effectiveFrom: new Date(parsed.data.effectiveFrom),
+      reason: previous && Number(previous.basicSalary) !== parsed.data.basicSalary
+        ? "Salary change"
+        : "Initial salary",
+      changedById: ctx.userId,
     },
   });
 

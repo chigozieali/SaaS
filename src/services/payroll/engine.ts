@@ -23,6 +23,8 @@ export type PayrollResult = {
   totalDeductions: number;
   totalContributions: number;
   netPay: number;
+  overtimePay: number;
+  unpaidDeduction: number;
   taxBreakdown: Record<string, number>;
   deductionBreakdown: Record<string, number>;
   contributionBreakdown: Record<string, number>;
@@ -40,6 +42,8 @@ interface ConfigList {
   taxRules: EffectiveRule[];
   deductionRules: Array<{ name: string; calculationType: string; value: number; cap: number | null }>;
   contributionRules: Array<{ name: string; contributor: string; calculationType: string; value: number; cap: number | null }>;
+  overtimeFactor: number;
+  workingDaysPerMonth: number;
 }
 
 function toNum(value: unknown): number {
@@ -62,7 +66,9 @@ export async function getActivePayrollConfiguration(
       effectiveFrom: { lte: asOf },
       OR: [{ effectiveTo: null }, { effectiveTo: { gte: asOf } }],
     },
-    include: {
+    select: {
+      overtimeFactor: true,
+      workingDaysPerMonth: true,
       taxRules: { orderBy: { bracketOrder: "asc" } },
       deductionRules: true,
       contributionRules: true,
@@ -93,6 +99,8 @@ export async function getActivePayrollConfiguration(
       value: toNum(r.value),
       cap: r.cap === null ? null : toNum(r.cap),
     })),
+    overtimeFactor: toNum(config.overtimeFactor) || 1,
+    workingDaysPerMonth: toNum(config.workingDaysPerMonth) || 22,
   };
 }
 
@@ -145,8 +153,19 @@ export function applyDeductionRule(
   }
 }
 
+function titleCase(name: string): string {
+  return name.replace(/([A-Z])/g, " $1").trim() || name;
+}
+
 /**
  * Full payroll calculation for one employee line.
+ *
+ * Extra inputs:
+ * - overtimePay: floated into gross.
+ * - unpaidDeduction: deducted below the line (unpaid leave / absence days).
+ * - extraDeductions / extraContributions: benefit shares (e.g. HMO) applied monthly.
+ * - deductionOverrides: map of lowercased rule name -> amount that replaces the
+ *   configured rule value (e.g. per-employee pension % or NHIA %).
  */
 export function calculatePayrollEmployee(input: {
   basicPay: number;
@@ -155,19 +174,60 @@ export function calculatePayrollEmployee(input: {
   deductionRules?: Array<{ name: string; calculationType: string; value: number; cap: number | null }>;
   contributionRules?: Array<{ name: string; contributor: string; calculationType: string; value: number; cap: number | null }>;
   annualize?: 1 | 12;
+  overtimePay?: number;
+  unpaidDeduction?: number;
+  extraDeductions?: Array<{ name: string; amount: number }>;
+  extraContributions?: Array<{ name: string; amount: number }>;
+  deductionOverrides?: Record<string, number>;
 }): PayrollResult {
   const annualize = input.annualize ?? 12;
   const allowancesTotal = Object.values(input.allowances ?? {}).reduce((a, b) => a + b, 0);
-  const grossPay = input.basicPay + allowancesTotal;
+  const overtimePay = Math.round((input.overtimePay ?? 0) * 100) / 100;
+  const unpaidDeduction = Math.round((input.unpaidDeduction ?? 0) * 100) / 100;
+  const grossBase = input.basicPay + allowancesTotal;
+  const grossPay = Math.round((grossBase + overtimePay) * 100) / 100;
+
+  const overrides: Record<string, number> = {};
+  for (const [k, v] of Object.entries(input.deductionOverrides ?? {})) {
+    overrides[k.toLowerCase()] = v;
+  }
+
+  function overrideFor(ruleName: string): number | undefined {
+    const n = ruleName.toLowerCase();
+    return Object.entries(overrides).find(([k]) => n.includes(k))?.[1];
+  }
 
   const totalDeductionsRaw: Record<string, number> = {};
   let taxAmount = 0;
 
   const gr = input.deductionRules ?? [];
   for (const rule of gr) {
-    let amount = applyDeductionRule(grossPay, rule, input.basicPay);
-    if (rule.cap && amount > rule.cap) amount = rule.cap;
+    const overrideAmount = overrideFor(rule.name);
+    let amount = overrideAmount !== undefined
+      ? overrideAmount
+      : applyDeductionRule(grossPay, rule, input.basicPay);
+    if (overrideAmount === undefined && rule.cap && amount > rule.cap) amount = rule.cap;
     totalDeductionsRaw[rule.name] = Math.round(amount * 100) / 100;
+  }
+
+  // Employee-side contributions (e.g. pension) counted as deductions.
+  for (const rule of input.contributionRules ?? []) {
+    if (rule.contributor === "employer") continue;
+    const overrideAmount = overrideFor(rule.name);
+    const amount = overrideAmount !== undefined
+      ? overrideAmount
+      : applyDeductionRule(grossPay, rule, input.basicPay);
+    totalDeductionsRaw[rule.name] = Math.round(amount * 100) / 100;
+  }
+
+  // Per-employee overrides unmatched by configured rules (pension/NHIA % etc.)
+  for (const [name, amount] of Object.entries(input.deductionOverrides ?? {})) {
+    const matched = [...(gr ?? []), ...(input.contributionRules ?? [])].some(
+      (r) => r.name.toLowerCase().includes(name.toLowerCase())
+    );
+    if (!matched && amount) {
+      totalDeductionsRaw[titleCase(name)] = Math.round(amount * 100) / 100;
+    }
   }
 
   // Progressive income tax on gross (config handles brackets)
@@ -178,17 +238,29 @@ export function calculatePayrollEmployee(input: {
     }
   }
 
-  // Employer contributions (not deducted from pay)
+  // Unpaid leave / absence is deducted below the line.
+  if (unpaidDeduction > 0) {
+    totalDeductionsRaw["Unpaid Leave"] = unpaidDeduction;
+  }
+
+  // Benefit shares (HMO etc.) deducted from pay.
+  for (const extra of input.extraDeductions ?? []) {
+    if (extra.amount) {
+      totalDeductionsRaw[extra.name] = Math.round(extra.amount * 100) / 100;
+    }
+  }
+
+  // Employer contributions (not deducted from pay).
   const contributionBreakdown: Record<string, number> = {};
   for (const rule of input.contributionRules ?? []) {
-    if (rule.contributor !== "employer") {
-      // Employee-side contributions count as deductions handled above; skip duplicates
-      const empAmount = applyDeductionRule(grossPay, rule, input.basicPay);
-      totalDeductionsRaw[rule.name] = Math.round(empAmount * 100) / 100;
-    } else {
-      let amount = applyDeductionRule(grossPay, rule, input.basicPay);
-      if (rule.cap && amount > rule.cap) amount = rule.cap;
-      contributionBreakdown[rule.name] = Math.round(amount * 100) / 100;
+    if (rule.contributor !== "employer") continue;
+    let amount = applyDeductionRule(grossPay, rule, input.basicPay);
+    if (rule.cap && amount > rule.cap) amount = rule.cap;
+    contributionBreakdown[rule.name] = Math.round(amount * 100) / 100;
+  }
+  for (const extra of input.extraContributions ?? []) {
+    if (extra.amount) {
+      contributionBreakdown[extra.name] = Math.round(extra.amount * 100) / 100;
     }
   }
 
@@ -208,10 +280,12 @@ export function calculatePayrollEmployee(input: {
     : {};
 
   return {
-    grossPay: Math.round(grossPay * 100) / 100,
+    grossPay,
     totalDeductions: finalTotalDeductions,
     totalContributions,
     netPay,
+    overtimePay,
+    unpaidDeduction,
     taxBreakdown,
     deductionBreakdown: finalDeductions,
     contributionBreakdown,

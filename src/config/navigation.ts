@@ -17,6 +17,10 @@ import {
   UsersRound,
   ScanLine,
   FolderKanban,
+  Layers,
+  HeartPulse,
+  ShieldCheck,
+  Landmark,
 } from "lucide-react";
 
 export type NavItem = {
@@ -42,10 +46,13 @@ export const navigation: NavItem[] = [
       { title: "My Leave", href: "/hr/my-leave", icon: Plane, permission: "employees.self" },
       { title: "My Payslips", href: "/hr/my-payslips", icon: Wallet, permission: "employees.self" },
       { title: "My Team", href: "/hr/my-team", icon: UsersRound, permission: "employees.self" },
+      { title: "Bank Requests", href: "/hr/bank-requests", icon: Landmark, permission: "employees.edit" },
       { title: "Employees", href: "/hr/employees", icon: UserPlus, permission: "employees.view" },
       { title: "Departments", href: "/hr/departments", icon: Building2, permission: "departments.view" },
       { title: "Leave", href: "/hr/leave", icon: CalendarDays, permission: "leave.view" },
+      { title: "Leave Types", href: "/hr/leave-types", icon: CalendarDays, permission: "leave.view" },
       { title: "Attendance", href: "/hr/attendance", icon: Clock, permission: "attendance.view" },
+      { title: "Compliance", href: "/hr/compliance", icon: ShieldCheck, permission: "employees.view" },
     ],
   },
   {
@@ -54,7 +61,10 @@ export const navigation: NavItem[] = [
     children: [
       { title: "Payroll Runs", href: "/payroll", icon: Wallet, permission: "payroll.view" },
       { title: "Salary Structures", href: "/payroll/salaries", icon: Banknote, permission: "payroll.view" },
+      { title: "Salary Grades", href: "/payroll/salary-grades", icon: Layers, permission: "employees.payroll" },
+      { title: "Benefit Plans", href: "/payroll/benefit-plans", icon: HeartPulse, permission: "employees.payroll" },
       { title: "Configuration", href: "/payroll/configuration", icon: Settings, permission: "payroll.configure" },
+      { title: "Compliance", href: "/payroll/compliance", icon: ShieldCheck, permission: "payroll.view" },
     ],
   },
   {

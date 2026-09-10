@@ -22,6 +22,7 @@ const schema = z.object({
   date: z.string().min(1),
   checkIn: z.string().optional().nullable(),
   checkOut: z.string().optional().nullable(),
+  overtimeHours: z.number().optional().default(0),
   status: z.string().default("present"),
   notes: z.string().optional(),
 });
@@ -53,6 +54,7 @@ export async function POST(req: Request) {
         checkIn,
         checkOut,
         hoursWorked: hoursWorked ? Math.round(hoursWorked * 100) / 100 : null,
+        overtimeHours: parsed.data.overtimeHours ?? 0,
         status: parsed.data.status,
         notes: parsed.data.notes || null,
       },

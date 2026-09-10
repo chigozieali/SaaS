@@ -20,8 +20,11 @@ export async function GET() {
     include: {
       department: true,
       position: true,
+      salaryGrade: true,
       manager: { select: { id: true, firstName: true, lastName: true } },
       salaryStructures: { where: { isActive: true }, orderBy: { effectiveFrom: "desc" }, take: 1 },
+      benefitEnrollments: { where: { isActive: true }, include: { plan: true } },
+      documents: { orderBy: { createdAt: "desc" }, take: 20 },
     },
   });
 
@@ -33,7 +36,7 @@ export async function GET() {
   const currency = org?.currency ?? "NGN";
 
   if (!me) {
-    return apiOk({ me: null, attendance: [], leaves: [], leaveTypes: [], team: [], leaveBalance: [], payslips: [], salary: null, currency });
+    return apiOk({ me: null, attendance: [], leaves: [], leaveTypes: [], team: [], leaveBalance: [], payslips: [], salary: null, benefits: [], documents: [], ytdDeductions: [], overtimeByMonth: [], currency });
   }
 
   const [ownAttendance, leaves, leaveTypes, team, payslips] = await Promise.all([
@@ -134,8 +137,16 @@ export async function GET() {
     .sort((a, b) => b.date.localeCompare(a.date))
     .slice(0, 60);
 
-  // Leave balance per type (calendar year).
+  // Leave balance per type: annual entitlement (or accrual), plus capped
+  // carryover from the previous year, minus approved days taken this year.
   const yearLeaves = leaves.filter((l) => l.startDate >= yearStart);
+  const lastYearStart = new Date(`${new Date().getFullYear() - 1}-01-01T00:00:00.000Z`);
+  const priorYearLeaves = leaves.filter(
+    (l) => l.status === "approved" && l.startDate >= lastYearStart && l.startDate < yearStart
+  );
+  const yearsSinceHire = me.hireDate
+    ? Math.max(0, Math.min(12, ((yearStart.getTime() - new Date(me.hireDate.toISOString().slice(0, 10)).getTime()) / (1000 * 60 * 60 * 24 * 30.44))))
+    : 12;
   const leaveBalance = leaveTypes.map((type) => {
     const rows = yearLeaves.filter((l) => l.leaveTypeId === type.id);
     const taken = rows
@@ -144,21 +155,61 @@ export async function GET() {
     const pending = rows
       .filter((l) => l.status === "pending")
       .reduce((sum, l) => sum + Number(l.days), 0);
+    const annual = Number(type.daysAllowed);
+    const accrual = type.accrualPerMonth ? Math.round(Number(type.accrualPerMonth) * yearsSinceHire * 10) / 10 : null;
+    const base = accrual !== null ? Math.min(accrual, annual) : annual;
+    const priorUsed = priorYearLeaves
+      .filter((l) => l.leaveTypeId === type.id)
+      .reduce((sum, l) => sum + Number(l.days), 0);
+    const unusedPrior = Math.max(0, annual - priorUsed);
+    const carryover = Math.min(unusedPrior, Number(type.carryoverMax ?? 0));
+    const available = base + carryover;
     return {
       leaveTypeId: type.id,
       name: type.name,
-      allowed: Number(type.daysAllowed),
+      isPaid: type.isPaid,
+      allowed: Math.round(available * 10) / 10,
       taken,
       pending,
-      remaining: Math.max(0, Number(type.daysAllowed) - taken),
+      carryover: Math.round(carryover * 10) / 10,
+      remaining: Math.max(0, Math.round((available - taken) * 10) / 10),
     };
   });
+
+  // Payroll section: YTD deductions from the current year's payslips.
+  const yearPayslips = payslips.filter((p) => p.createdAt >= yearStart);
+  const ytdDeductions: Array<{ name: string; amount: number }> = [];
+  const ytdMap = new Map<string, number>();
+  for (const p of yearPayslips) {
+    const breakdown = (p.breakdown ?? {}) as Record<string, unknown>;
+    const deductions = (breakdown.deductions ?? {}) as Record<string, number>;
+    for (const [k, v] of Object.entries(deductions)) {
+      ytdMap.set(k, (ytdMap.get(k) ?? 0) + Number(v ?? 0));
+    }
+  }
+  for (const [name, amount] of ytdMap) {
+    ytdDeductions.push({ name, amount: Math.round(amount * 100) / 100 });
+  }
+
+  // Monthly overtime summary for the current year / recent months.
+  const overtimeByMonth: Array<{ month: string; hours: number }> = [];
+  const otMap = new Map<string, number>();
+  for (const a of ownAttendance) {
+    if (a.date < yearStart) continue;
+    const key = a.date.toISOString().slice(0, 7);
+    otMap.set(key, (otMap.get(key) ?? 0) + Number(a.overtimeHours ?? 0));
+  }
+  for (const [month, hours] of otMap) {
+    overtimeByMonth.push({ month, hours: Math.round(hours * 100) / 100 });
+  }
+  overtimeByMonth.sort((a, b) => b.month.localeCompare(a.month));
 
   const salary = me.salaryStructures[0]
     ? {
         id: me.salaryStructures[0].id,
         basicSalary: Number(me.salaryStructures[0].basicSalary),
         allowances: me.salaryStructures[0].allowances as Record<string, number>,
+        payFrequency: me.payFrequency,
       }
     : null;
 
@@ -171,6 +222,10 @@ export async function GET() {
     leaveBalance,
     payslips,
     salary,
+    benefits: me.benefitEnrollments,
+    documents: me.documents,
+    ytdDeductions,
+    overtimeByMonth,
     currency,
   });
 }

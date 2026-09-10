@@ -45,6 +45,7 @@ type MyRecordsData = {
   } | null;
   payslips: PayslipRow[];
   salary: { id: string; basicSalary: number; allowances: Record<string, number> } | null;
+  ytdDeductions?: { name: string; amount: number }[];
   currency: string;
 };
 
@@ -54,6 +55,7 @@ export function MyPayslipsClient() {
 
   const payslips = data?.payslips ?? [];
   const salary = data?.salary ?? null;
+  const ytdDeductions = data?.ytdDeductions ?? [];
   const currency = data?.currency ?? "NGN";
 
   const allowancesTotal = salary
@@ -144,6 +146,22 @@ export function MyPayslipsClient() {
               {formatMoney(salary.basicSalary + allowancesTotal, currency)}
             </DetailField>
           </DetailGrid>
+        </Card>
+      )}
+
+      {ytdDeductions.length > 0 && (
+        <Card className="p-6">
+          <h2 className="mb-4 text-sm font-semibold">
+            Year-to-date deductions ({new Date().getFullYear()})
+          </h2>
+          <div className="divide-y rounded-md border">
+            {ytdDeductions.map((d) => (
+              <div key={d.name} className="flex items-center justify-between px-3 py-2 text-sm">
+                <span className="capitalize">{d.name}</span>
+                <span className="font-medium">{formatMoney(d.amount, currency)}</span>
+              </div>
+            ))}
+          </div>
         </Card>
       )}
 

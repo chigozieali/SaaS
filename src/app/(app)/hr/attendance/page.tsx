@@ -4,8 +4,6 @@ import { AttendanceClient } from "@/components/hr/attendance-client";
 export const dynamic = "force-dynamic";
 
 export default async function AttendancePage() {
-  await requireOrg("attendance.view");
-  return (
-      <AttendanceClient />
-  );
+  const ctx = await requireOrg("attendance.view");
+  return <AttendanceClient canEdit={ctx.permissions.has("attendance.edit")} />;
 }

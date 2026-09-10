@@ -43,13 +43,14 @@ type AttendanceRow = {
   checkIn: string | null;
   checkOut: string | null;
   hoursWorked: number | null;
+  overtimeHours: number | string;
   status: string;
   employee: { firstName: string; lastName: string };
 };
 
 const TIME_FORMAT: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit" };
 
-export function AttendanceClient() {
+export function AttendanceClient({ canEdit }: { canEdit: boolean }) {
   const { data, mutate } = useSWR("/api/hr/attendance", fetcher);
   const { data: empData } = useSWR("/api/hr/employees", fetcher);
   const [open, setOpen] = useState(false);
@@ -59,6 +60,22 @@ export function AttendanceClient() {
 
   const attendances = data?.attendances ?? [];
   const employees = empData?.employees ?? [];
+
+  async function handleOvertime(id: string, hours: string) {
+    const ot = Number(hours);
+    if (!Number.isFinite(ot) || ot < 0) return;
+    const res = await fetch(`/api/hr/attendance/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ overtimeHours: ot }),
+    });
+    if (res.ok) {
+      toast.success("Overtime updated");
+      mutate();
+    } else {
+      toast.error("Failed to update overtime");
+    }
+  }
 
   const columns: ColumnDef<AttendanceRow>[] = [
     {
@@ -121,6 +138,25 @@ export function AttendanceClient() {
         </Badge>
       ),
     },
+    {
+      accessorFn: (a) => Number(a.overtimeHours ?? 0),
+      id: "overtime",
+      header: "OT (h)",
+      cell: ({ row }) =>
+        canEdit ? (
+          <Input
+            className="h-7 w-20"
+            key={row.original.id}
+            defaultValue={Number(row.original.overtimeHours ?? 0)}
+            type="number"
+            min="0"
+            step="0.5"
+            onBlur={(e) => handleOvertime(row.original.id, e.target.value)}
+          />
+        ) : (
+          <span>{Number(row.original.overtimeHours ?? 0)}</span>
+        ),
+    },
   ];
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -131,6 +167,9 @@ export function AttendanceClient() {
       date: formData.get("date"),
       checkIn: (formData.get("checkIn") as string) || null,
       checkOut: (formData.get("checkOut") as string) || null,
+      overtimeHours: formData.get("overtimeHours")
+        ? Number(formData.get("overtimeHours"))
+        : 0,
       status,
     };
     setSaving(true);
@@ -217,19 +256,25 @@ export function AttendanceClient() {
                 <Input id="checkOut" name="checkOut" type="time" />
               </div>
             </div>
-            <div className="space-y-2">
-              <Label>Status</Label>
-              <Select value={status} onValueChange={setStatus}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="present">Present</SelectItem>
-                  <SelectItem value="absent">Absent</SelectItem>
-                  <SelectItem value="on_leave">On leave</SelectItem>
-                  <SelectItem value="half_day">Half day</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="overtimeHours">Overtime hours</Label>
+                <Input id="overtimeHours" name="overtimeHours" type="number" min="0" step="0.5" defaultValue={0} />
+              </div>
+              <div className="space-y-2">
+                <Label>Status</Label>
+                <Select value={status} onValueChange={setStatus}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="present">Present</SelectItem>
+                    <SelectItem value="absent">Absent</SelectItem>
+                    <SelectItem value="on_leave">On leave</SelectItem>
+                    <SelectItem value="half_day">Half day</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setOpen(false)}>

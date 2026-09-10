@@ -8,6 +8,7 @@ export const PERMISSIONS = {
     create: "employees.create",
     edit: "employees.edit",
     delete: "employees.delete",
+    payroll: "employees.payroll",
   },
   departments: {
     view: "departments.view",
@@ -95,6 +96,8 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
   ],
   Accountant: [
     PERMISSIONS.dashboard.view,
+    PERMISSIONS.employees.view,
+    PERMISSIONS.employees.payroll,
     PERMISSIONS.accounting.view,
     PERMISSIONS.accounting.chartOfAccounts,
     PERMISSIONS.accounting.journal,

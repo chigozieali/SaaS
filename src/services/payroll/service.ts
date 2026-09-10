@@ -5,6 +5,100 @@ import {
   type PayrollResult,
 } from "@/services/payroll/engine";
 
+/** Calendar-day overlap between [lStart,lEnd] and [pStart,pEnd]. */
+function overlapDays(lStart: Date, lEnd: Date, pStart: Date, pEnd: Date): number {
+  const start = new Date(Math.max(lStart.getTime(), pStart.getTime()));
+  const end = new Date(Math.min(lEnd.getTime(), pEnd.getTime()));
+  if (start > end) return 0;
+  return Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+}
+
+type AdjustmentContext = {
+  overtimeHours: number;
+  absentDays: number;
+  unpaidLeaveDays: number;
+  extraDeductions: Array<{ name: string; amount: number }>;
+  extraContributions: Array<{ name: string; amount: number }>;
+  deductionOverrides: Record<string, number>;
+};
+
+/**
+ * Gather the pay-impacting signals HR produces for an employee for a period:
+ * overtime hours, unpaid absences, approved unpaid leave, benefit (HMO)
+ * enrollment shares, and per-employee pension/NHIA percentage overrides.
+ */
+async function collectAdjustments(
+  tx: import("@prisma/client").Prisma.TransactionClient,
+  employeeId: string,
+  grossBase: number,
+  workingDays: number,
+  periodStart: Date,
+  periodEnd: Date
+): Promise<AdjustmentContext> {
+  const ctx: AdjustmentContext = {
+    overtimeHours: 0,
+    absentDays: 0,
+    unpaidLeaveDays: 0,
+    extraDeductions: [],
+    extraContributions: [],
+    deductionOverrides: {},
+  };
+  if (!workingDays) return ctx;
+
+  const [attendanceRows, leaves, enrollments, emp] = await Promise.all([
+    tx.attendance.findMany({ where: { employeeId, date: { gte: periodStart, lte: periodEnd } } }),
+    tx.leave.findMany({
+      where: {
+        employeeId,
+        status: "approved",
+        startDate: { lte: periodEnd },
+        endDate: { gte: periodStart },
+      },
+      include: { leaveType: true },
+    }),
+    tx.employeeBenefit.findMany({
+      where: { employeeId, isActive: true },
+      include: { plan: true },
+    }),
+    tx.employee.findUnique({ where: { id: employeeId } }),
+  ]);
+
+  for (const row of attendanceRows) {
+    ctx.overtimeHours += Number(row.overtimeHours ?? 0);
+    if (row.status === "absent") ctx.absentDays += 1;
+  }
+  for (const leave of leaves) {
+    if (!leave.leaveType.isPaid) {
+      ctx.unpaidLeaveDays += overlapDays(leave.startDate, leave.endDate, periodStart, periodEnd);
+    }
+  }
+
+  // HMO / benefit plan shares (plan shares are treated as monthly amounts).
+  for (const enrollment of enrollments) {
+    if (enrollment.plan.type !== "hmo") continue;
+    const premium = Number(enrollment.plan.premium ?? 0);
+    const empSharePct = Number(enrollment.plan.employeeSharePct ?? 0) / 100;
+    const empSharePct2 = Number(enrollment.plan.employerSharePct ?? 0) / 100;
+    const employeeShare =
+      enrollment.employeeContribution != null
+        ? Number(enrollment.employeeContribution)
+        : premium * empSharePct;
+    const employerShare = premium * empSharePct2;
+    if (employeeShare > 0) ctx.extraDeductions.push({ name: `${enrollment.plan.name}`, amount: employeeShare });
+    if (employerShare > 0) ctx.extraContributions.push({ name: `${enrollment.plan.name} (Employer)`, amount: employerShare });
+  }
+
+  // Per-employee pension / NHIA % act as overrides on matching configured rules.
+  if (emp?.pensionPct != null) {
+    ctx.deductionOverrides["pension"] = Math.round((grossBase * Number(emp.pensionPct)) / 100 * 100) / 100;
+  }
+  if (emp?.nhiaPct != null) {
+    ctx.deductionOverrides["nhia"] = Math.round((grossBase * Number(emp.nhiaPct)) / 100 * 100) / 100;
+  }
+
+  return ctx;
+}
+
 /**
  * Compute all payroll lines for a run within a transaction.
  * The run must be in draft/submitted state (finalized runs cannot be re-calculated).
@@ -21,8 +115,6 @@ export async function computePayrollRun(runId: string, organizationId: string) {
 
     const period = await tx.payrollPeriod.findUnique({ where: { id: run.periodId } });
     if (!period) throw new Error("Payroll period not found");
-
-    // Guard: accounting period overlap check handled at run creation.
 
     const employees = await tx.employee.findMany({
       where: {
@@ -46,6 +138,7 @@ export async function computePayrollRun(runId: string, organizationId: string) {
     const config = org
       ? await getActivePayrollConfiguration(organizationId, org.countryCode, period.endDate)
       : null;
+    const workingDays = Number(config?.workingDaysPerMonth) || 22;
 
     // Delete existing lines so recalculation is idempotent
     await tx.payrollRunLine.deleteMany({ where: { runId } });
@@ -58,6 +151,25 @@ export async function computePayrollRun(runId: string, organizationId: string) {
       const salary = employee.salaryStructures[0];
       const basicPay = salary ? Number(salary.basicSalary) : 0;
       const allowances = (salary?.allowances ?? {}) as Record<string, number>;
+      const grossBase = basicPay + Object.values(allowances).reduce((a, b) => a + b, 0);
+
+      const adjustments = await collectAdjustments(
+        tx,
+        employee.id,
+        grossBase,
+        workingDays,
+        period.startDate,
+        period.endDate
+      );
+
+      const overtimePay =
+        Math.round(
+          ctxOvertimePay(adjustments, grossBase, workingDays, config?.overtimeFactor ?? 1) * 100
+        ) / 100;
+
+      const unpaidDeduction = Math.round(
+        ((adjustments.absentDays + adjustments.unpaidLeaveDays) * grossBase) / workingDays * 100
+      ) / 100;
 
       const result: PayrollResult = calculatePayrollEmployee({
         basicPay,
@@ -66,6 +178,11 @@ export async function computePayrollRun(runId: string, organizationId: string) {
         deductionRules: config?.deductionRules,
         contributionRules: config?.contributionRules,
         annualize: 12,
+        overtimePay,
+        unpaidDeduction,
+        extraDeductions: adjustments.extraDeductions,
+        extraContributions: adjustments.extraContributions,
+        deductionOverrides: adjustments.deductionOverrides,
       });
 
       await tx.payrollRunLine.create({
@@ -80,6 +197,8 @@ export async function computePayrollRun(runId: string, organizationId: string) {
           deductions: result.deductionBreakdown as never,
           totalDeductions: result.totalDeductions,
           totalContributions: result.totalContributions,
+          overtimePay: result.overtimePay,
+          unpaidDeduction: result.unpaidDeduction,
           netPay: result.netPay,
           employerContribJson: result.contributionBreakdown as never,
           taxJson: result.taxBreakdown as never,
@@ -110,6 +229,18 @@ export async function computePayrollRun(runId: string, organizationId: string) {
       totalNet,
     };
   }, { timeout: 120_000 });
+}
+
+function ctxOvertimePay(
+  adjustments: AdjustmentContext,
+  grossBase: number,
+  workingDays: number,
+  factor: number
+): number {
+  if (!adjustments.overtimeHours) return 0;
+  const dailyRate = grossBase / workingDays;
+  const hourlyRate = dailyRate / 8;
+  return adjustments.overtimeHours * hourlyRate * factor;
 }
 
 export async function finalizePayrollRun(runId: string, organizationId: string, userId: string) {
@@ -147,6 +278,8 @@ export async function finalizePayrollRun(runId: string, organizationId: string, 
             deductions: line.deductions,
             contributions: line.employerContribJson,
             tax: line.taxJson,
+            overtimePay: Number(line.overtimePay),
+            unpaidDeduction: Number(line.unpaidDeduction),
           } as never,
           issuedAt: new Date(),
         },

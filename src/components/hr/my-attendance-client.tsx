@@ -26,6 +26,7 @@ type AttendanceRow = {
   checkIn: string | null;
   checkOut: string | null;
   hoursWorked: number | null;
+  overtimeHours: number | string;
   status: string;
   employee: { firstName: string; lastName: string } | null;
 };
@@ -94,12 +95,21 @@ export function MyAttendanceClient() {
       ),
     },
     {
-      accessorKey: "status",
+      accessorFn: (a) => a.status,
+      id: "status",
       header: "Status",
       cell: ({ row }) => (
         <Badge variant={attendanceBadge[row.original.status] ?? "outline"}>
           {row.original.status.replace("_", " ")}
         </Badge>
+      ),
+    },
+    {
+      accessorFn: (a) => Number(a.overtimeHours ?? 0),
+      id: "overtime",
+      header: "OT (h)",
+      cell: ({ row }) => (
+        <span>{Number(row.original.overtimeHours ?? 0) > 0 ? Number(row.original.overtimeHours).toFixed(1) : "—"}</span>
       ),
     },
   ];

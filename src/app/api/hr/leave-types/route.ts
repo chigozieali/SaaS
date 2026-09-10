@@ -6,6 +6,8 @@ const schema = z.object({
   name: z.string().min(1),
   daysAllowed: z.number().int().positive(),
   isPaid: z.boolean().default(true),
+  accrualPerMonth: z.number().optional().nullable(),
+  carryoverMax: z.number().optional().default(0),
 });
 
 export async function GET() {
@@ -36,6 +38,8 @@ export async function POST(req: Request) {
         name: parsed.data.name,
         daysAllowed: parsed.data.daysAllowed,
         isPaid: parsed.data.isPaid,
+        accrualPerMonth: parsed.data.accrualPerMonth ?? null,
+        carryoverMax: parsed.data.carryoverMax ?? 0,
       },
     });
     return apiOk({ leaveType }, 201);
