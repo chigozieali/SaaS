@@ -143,11 +143,8 @@ type RunLineLike = {
  */
 export function buildPayrollJournalFromLines(lines: RunLineLike[]): JournalLineInput[] {
   const totalGross = lines.reduce((s, l) => s + num(l.grossPay), 0);
-  const totalNet = lines.reduce((s, l) => s + num(l.netPay), 0);
 
   const out: JournalLineInput[] = [];
-  out.push({ accountCode: "5100", description: "Gross salaries & wages", debit: totalGross });
-  out.push({ accountCode: "2700", description: "Net pay to clearing", credit: totalNet });
 
   // Employee-side deductions (tax, pension, NHIA, loans, reimbursements, unpaid leave…)
   const employeeCredits = new Map<string, { label: string; amount: number }>();
@@ -177,6 +174,13 @@ export function buildPayrollJournalFromLines(lines: RunLineLike[]): JournalLineI
       out.push({ accountCode: cls.payable, description: `${cls.label} (payable)`, credit: amount });
     }
   }
+
+  // Net pay is the balancing figure so the journal is always balanced even if
+  // per-line rounding differs by a kobo; equals sum(netPay) in practice.
+  const creditsTotal = out.reduce((s, l) => s + (l.credit ?? 0), 0);
+  const netCredit = Math.round((totalGross - creditsTotal) * 100) / 100;
+  out.push({ accountCode: "5100", description: "Gross salaries & wages", debit: totalGross });
+  out.push({ accountCode: "2700", description: "Net pay to clearing", credit: netCredit });
 
   return out;
 }

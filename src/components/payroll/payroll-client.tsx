@@ -36,13 +36,14 @@ const flow: Record<string, string[]> = {
   draft: ["submit"],
   submitted: ["approve"],
   approved: ["finalize"],
-  finalized: ["post"],
+  finalized: [],
   posted: [],
 };
 
 type PayrollRunRow = {
   id: string;
   status: string;
+  journalEntryId: string | null;
   _count: { lines: number };
   lines: { netPay: number }[];
   period: { name: string; startDate: string; endDate: string };
@@ -185,12 +186,24 @@ export function PayrollClient() {
       ),
     },
     {
+      accessorFn: (run) => run.journalEntryId,
+      id: "gl",
+      header: "GL",
+      cell: ({ row }) =>
+        row.original.journalEntryId ? (
+          <Badge variant="success">Journaled</Badge>
+        ) : (
+          <span className="text-xs text-muted-foreground">—</span>
+        ),
+    },
+    {
       id: "actions",
       header: "",
       enableSorting: false,
       meta: { headerClassName: "text-right", cellClassName: "text-right" },
       cell: ({ row }) => {
         const run = row.original;
+        const canPostMissing = !run.journalEntryId && ["approved", "finalized"].includes(run.status);
         return (
           <div className="flex justify-end gap-1">
             {run.status === "draft" && (
@@ -220,6 +233,17 @@ export function PayrollClient() {
                 </Button>
               );
             })}
+            {canPostMissing && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7"
+                disabled={busyId === run.id}
+                onClick={() => act(run.id, "post")}
+              >
+                <BookOpenCheck className="h-3 w-3" /> Post to GL
+              </Button>
+            )}
           </div>
         );
       },

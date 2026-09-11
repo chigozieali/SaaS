@@ -35,7 +35,7 @@ export async function PATCH(
 
   try {
     let result: Record<string, unknown> = { id, status: loan.status };
-    let action = parsed.data.action;
+    const action = parsed.data.action;
 
     switch (action) {
       case "approve":

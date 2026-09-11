@@ -22,6 +22,7 @@ import {
   ShieldCheck,
   Landmark,
   BellRing,
+  HandCoins,
 } from "lucide-react";
 
 export type NavItem = {
@@ -69,6 +70,7 @@ export const navigation: NavItem[] = [
       { title: "Salary Grades", href: "/payroll/salary-grades", icon: Layers, permission: "employees.payroll" },
       { title: "Benefit Plans", href: "/payroll/benefit-plans", icon: HeartPulse, permission: "employees.payroll" },
       { title: "Configuration", href: "/payroll/configuration", icon: Settings, permission: "payroll.configure" },
+      { title: "Loans & Advances", href: "/payroll/loans", icon: HandCoins, permission: "payroll.view" },
       { title: "Compliance", href: "/payroll/compliance", icon: ShieldCheck, permission: "payroll.view" },
     ],
   },
@@ -83,6 +85,7 @@ export const navigation: NavItem[] = [
       { title: "Vendors", href: "/accounting/vendors", icon: UsersRound, permission: "accounting.bills" },
       { title: "Bills", href: "/accounting/bills", icon: Receipt, permission: "accounting.bills" },
       { title: "Expenses", href: "/accounting/expenses", icon: ScanLine, permission: "accounting.expenses" },
+      { title: "Statutory Remittances", href: "/accounting/remittances", icon: Landmark, permission: "accounting.journal" },
       { title: "Reports", href: "/accounting/reports", icon: FileText, permission: "accounting.reports" },
     ],
   },

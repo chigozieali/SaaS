@@ -2,7 +2,7 @@
 
 import useSWR from "swr";
 import { useState } from "react";
-import { Plus } from "lucide-react";
+import { Plus, Banknote, Send } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/modules/page-header";
@@ -30,11 +30,17 @@ import {
 } from "@/components/ui/select";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
-const badgeVariant: Record<string, "warning" | "success" | "destructive" | "info" | "outline"> = {
+const badgeVariant: Record<string, "warning" | "success" | "destructive" | "info" | "outline" | "secondary"> = {
   pending: "warning",
-  approved: "success",
+  approved: "info",
+  paid: "success",
   rejected: "destructive",
   cancelled: "outline",
+};
+
+const methodLabel: Record<string, string> = {
+  payroll: "Payroll",
+  bank: "Bank",
 };
 
 type ExpenseRow = {
@@ -43,21 +49,41 @@ type ExpenseRow = {
   description: string | null;
   amount: number;
   status: string;
+  reimbursementMethod: string | null;
+  employeeId: string | null;
+  payrollRunId: string | null;
+  paidAt: string | null;
   category?: { name: string } | null;
   vendor?: { name: string } | null;
+  employee?: { firstName: string; lastName: string } | null;
+  payrollRun?: { period?: { name: string } } | null;
 };
+
+type EmployeeOption = { id: string; firstName: string; lastName: string; employeeCode: string };
+type RunOption = { id: string; status: string; period: { name: string } };
 
 export function ExpensesClient() {
   const { data, mutate } = useSWR("/api/accounting/expenses", fetcher);
   const { data: vendorData } = useSWR("/api/accounting/vendors", fetcher);
+  const { data: employeeData } = useSWR("/api/hr/employees", fetcher);
+  const { data: runsData } = useSWR("/api/payroll/runs", fetcher);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [categoryId, setCategoryId] = useState("");
   const [vendorId, setVendorId] = useState("");
+  const [employeeId, setEmployeeId] = useState("");
+  const [reimbursementMethod, setReimbursementMethod] = useState("bank");
+  const [payBankId, setPayBankId] = useState<string | null>(null);
+  const [payRun, setPayRun] = useState<{ id: string; payrollRunId: string | null } | null>(null);
+  const [selectedRun, setSelectedRun] = useState("");
 
   const expenses = data?.expenses ?? [];
   const categories = data?.categories ?? [];
   const vendors = vendorData?.vendors ?? [];
+  const employees: EmployeeOption[] = employeeData?.employees ?? [];
+  const allRuns: RunOption[] = (runsData?.runs ?? []).filter((r: RunOption) =>
+    ["draft", "submitted"].includes(r.status)
+  );
 
   const columns: ColumnDef<ExpenseRow>[] = [
     {
@@ -73,16 +99,25 @@ export function ExpensesClient() {
       cell: ({ row }) => <span className="font-medium">{row.original.description ?? "—"}</span>,
     },
     {
+      accessorFn: (e) => e.employee?.firstName ?? "",
+      id: "employee",
+      header: "Employee",
+      cell: ({ row }) => {
+        const emp = row.original.employee;
+        return emp ? (
+          <span className="text-muted-foreground">
+            {emp.firstName} {emp.lastName}
+          </span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        );
+      },
+    },
+    {
       accessorFn: (e) => e.category?.name ?? "",
       id: "category",
       header: "Category",
       cell: ({ row }) => <span>{row.original.category?.name ?? "—"}</span>,
-    },
-    {
-      accessorFn: (e) => e.vendor?.name ?? "",
-      id: "vendor",
-      header: "Vendor",
-      cell: ({ row }) => <span>{row.original.vendor?.name ?? "—"}</span>,
     },
     {
       accessorFn: (e) => Number(e.amount),
@@ -102,31 +137,61 @@ export function ExpensesClient() {
       ),
     },
     {
+      accessorFn: (e) => e.reimbursementMethod ?? "",
+      id: "method",
+      header: "Payment",
+      cell: ({ row }) => {
+        const rowData = row.original;
+        if (rowData.status === "paid") {
+          const method = rowData.reimbursementMethod === "payroll" ? "via payroll" : "by bank";
+          return <span className="text-xs text-muted-foreground">{method}</span>;
+        }
+        if (rowData.payrollRunId) {
+          return (
+            <span className="text-xs text-muted-foreground">
+              → {rowData.payrollRun?.period?.name ?? "run"} (open)
+            </span>
+          );
+        }
+        if (rowData.reimbursementMethod) {
+          return <Badge variant="secondary">{methodLabel[rowData.reimbursementMethod] ?? rowData.reimbursementMethod}</Badge>;
+        }
+        return <span className="text-xs text-muted-foreground">—</span>;
+      },
+    },
+    {
       id: "actions",
       header: "",
       enableSorting: false,
       meta: { headerClassName: "text-right", cellClassName: "text-right" },
-      cell: ({ row }) =>
-        row.original.status === "pending" ? (
-          <div className="flex justify-end gap-1">
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7"
-              onClick={() => decide(row.original.id, "approved")}
-            >
-              Approve
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-7"
-              onClick={() => decide(row.original.id, "rejected")}
-            >
-              Reject
-            </Button>
-          </div>
-        ) : null,
+      cell: ({ row }) => {
+        const expense = row.original;
+        if (expense.status === "pending") {
+          return (
+            <div className="flex justify-end gap-1">
+              <Button size="sm" variant="outline" className="h-7" onClick={() => decide(expense.id, "approved")}>
+                Approve
+              </Button>
+              <Button size="sm" variant="ghost" className="h-7" onClick={() => decide(expense.id, "rejected")}>
+                Reject
+              </Button>
+            </div>
+          );
+        }
+        if (expense.status === "approved") {
+          return (
+            <div className="flex justify-end gap-1">
+              <Button size="sm" variant="outline" className="h-7" onClick={() => setPayBankId(expense.id)}>
+                <Banknote className="h-3 w-3" /> Pay bank
+              </Button>
+              <Button size="sm" variant="outline" className="h-7" disabled={!expense.employeeId} onClick={() => setPayRun({ id: expense.id, payrollRunId: expense.payrollRunId })}>
+                <Send className="h-3 w-3" /> Payroll
+              </Button>
+            </div>
+          );
+        }
+        return null;
+      },
     },
   ];
 
@@ -136,6 +201,8 @@ export function ExpensesClient() {
     const payload = {
       categoryId: categoryId || null,
       vendorId: vendorId || null,
+      employeeId: employeeId || null,
+      reimbursementMethod: employeeId ? reimbursementMethod : null,
       amount: Number(formData.get("amount")),
       date: formData.get("date"),
       description: (formData.get("description") as string) || undefined,
@@ -151,9 +218,12 @@ export function ExpensesClient() {
       toast.success("Expense submitted");
       mutate();
       setOpen(false);
+      setEmployeeId("");
+      setCategoryId("");
+      setVendorId("");
     } else {
-      const data = await res.json().catch(() => null);
-      toast.error(data?.message ?? "Failed to submit expense");
+      const errData = await res.json().catch(() => null);
+      toast.error(errData?.message ?? "Failed to submit expense");
     }
   }
 
@@ -167,8 +237,75 @@ export function ExpensesClient() {
       toast.success(`Expense ${status}`);
       mutate();
     } else {
-      const data = await res.json().catch(() => null);
-      toast.error(data?.message ?? "Failed to update expense");
+      const errData = await res.json().catch(() => null);
+      toast.error(errData?.message ?? "Failed to update expense");
+    }
+  }
+
+  async function payBank(e: React.FormEvent<HTMLFormElement>) {
+    if (!payBankId) return;
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    setSaving(true);
+    const res = await fetch(`/api/accounting/expenses/${payBankId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        pay: {
+          method: "bank",
+          date: (formData.get("date") as string) || undefined,
+          reference: (formData.get("reference") as string) || undefined,
+        },
+      }),
+    });
+    setSaving(false);
+    if (res.ok) {
+      toast.success("Expense paid");
+      setPayBankId(null);
+      mutate();
+    } else {
+      const errData = await res.json().catch(() => null);
+      toast.error(errData?.message ?? "Payment failed");
+    }
+  }
+
+  async function attachRun() {
+    if (!payRun || !selectedRun) return;
+    setSaving(true);
+    const res = await fetch(`/api/accounting/expenses/${payRun.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pay: { method: "payroll", runId: selectedRun } }),
+    });
+    setSaving(false);
+    if (res.ok) {
+      toast.success("Claim attached to payroll run");
+      setPayRun(null);
+      setSelectedRun("");
+      mutate();
+    } else {
+      const errData = await res.json().catch(() => null);
+      toast.error(errData?.message ?? "Failed to attach to payroll");
+    }
+  }
+
+  async function detachRun() {
+    if (!payRun) return;
+    setSaving(true);
+    const res = await fetch(`/api/accounting/expenses/${payRun.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pay: { method: "payroll", runId: null } }),
+    });
+    setSaving(false);
+    if (res.ok) {
+      toast.success("Removed from payroll run");
+      setPayRun(null);
+      setSelectedRun("");
+      mutate();
+    } else {
+      const errData = await res.json().catch(() => null);
+      toast.error(errData?.message ?? "Failed to detach");
     }
   }
 
@@ -190,7 +327,7 @@ export function ExpensesClient() {
 
   return (
     <div>
-      <PageHeader title="Expenses" description="Submit, review and approve expense reimbursements.">
+      <PageHeader title="Expenses" description="Submit, review, approve and reimburse employee expense claims.">
         <Button onClick={() => setOpen(true)}>
           <Plus className="h-4 w-4" /> New Expense
         </Button>
@@ -211,7 +348,7 @@ export function ExpensesClient() {
           <DataTable
             columns={columns}
             data={expenses as ExpenseRow[]}
-            filterKeys={["description", "category.name", "vendor.name", "status"]}
+            filterKeys={["description", "category.name", "employee.firstName", "status"]}
             searchPlaceholder="Search expenses…"
             emptyMessage="No expenses match your search"
             pageSize={10}
@@ -226,7 +363,7 @@ export function ExpensesClient() {
             {categories.length === 0 && (
               <li className="text-sm text-muted-foreground">No categories yet.</li>
             )}
-            {categories.map((c: Record<string, any>) => (
+            {categories.map((c: { id: string; name: string; accountId: string | null }) => (
               <li key={c.id} className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm">
                 <span>{c.name}</span>
                 <Badge variant="secondary">{c.accountId ? "mapped" : "unmapped"}</Badge>
@@ -246,7 +383,7 @@ export function ExpensesClient() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Submit Expense</DialogTitle>
-            <DialogDescription>Expenses require approval before they are posted.</DialogDescription>
+            <DialogDescription>Expenses require approval before they are booked and paid.</DialogDescription>
           </DialogHeader>
           <form onSubmit={onSubmit} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
@@ -262,6 +399,35 @@ export function ExpensesClient() {
             <div className="space-y-2">
               <Label htmlFor="description">Description</Label>
               <Input id="description" name="description" />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Employee (claimant)</Label>
+                <Select value={employeeId || undefined} onValueChange={setEmployeeId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Company expense" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {employees.map((emp) => (
+                      <SelectItem key={emp.id} value={emp.id}>
+                        {emp.firstName} {emp.lastName} ({emp.employeeCode})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Reimburse via</Label>
+                <Select value={employeeId ? reimbursementMethod : undefined} onValueChange={setReimbursementMethod} disabled={!employeeId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={employeeId ? "Select method" : "Select claimant first"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="bank">Bank / Cash</SelectItem>
+                    <SelectItem value="payroll">Payroll (net pay top-up)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
@@ -283,7 +449,7 @@ export function ExpensesClient() {
                 <Label>Vendor</Label>
                 <Select value={vendorId || undefined} onValueChange={setVendorId}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select vendor" />
+                    <SelectValue placeholder="Optional" />
                   </SelectTrigger>
                   <SelectContent>
                     {vendors.map((v: { id: string; name: string }) => (
@@ -304,6 +470,86 @@ export function ExpensesClient() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={payBankId !== null} onOpenChange={(o) => !o && setPayBankId(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Pay Expense by Bank</DialogTitle>
+            <DialogDescription>Records a payment journal (Dr payable, Cr payroll clearing).</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={payBank} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="pay-date">Payment date</Label>
+                <Input id="pay-date" name="date" type="date" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="pay-ref">Reference</Label>
+                <Input id="pay-ref" name="reference" placeholder="e.g. TRF-1001" />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setPayBankId(null)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={saving}>
+                {saving ? "Paying…" : "Confirm payment"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={payRun !== null} onOpenChange={(o) => !o && setPayRun(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Pay via Payroll</DialogTitle>
+            <DialogDescription>
+              Attach this claim to an open payroll run. It becomes a net-pay top-up and clears the
+              reimbursement payable when the run&apos;s journal is posted.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {payRun?.payrollRunId ? (
+              <p className="text-sm text-muted-foreground">
+                This claim is attached to a payroll run. You can detach it to choose a different run (only if the run is not yet approved).
+              </p>
+            ) : (
+              <div className="space-y-2">
+                <Label>Payroll run (draft/submitted)</Label>
+                <Select value={selectedRun || undefined} onValueChange={setSelectedRun}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={allRuns.length ? "Select run" : "No open runs"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {allRuns.map((run) => (
+                      <SelectItem key={run.id} value={run.id}>
+                        {run.period.name} ({run.status})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <DialogFooter className="flex justify-between gap-2 sm:justify-end">
+              <div className="flex gap-2">
+                <Button type="button" variant="outline" onClick={() => setPayRun(null)}>
+                  Cancel
+                </Button>
+                {payRun?.payrollRunId ? (
+                  <Button type="button" variant="destructive" disabled={saving} onClick={detachRun}>
+                    Detach
+                  </Button>
+                ) : (
+                  <Button type="button" disabled={saving || !selectedRun} onClick={attachRun}>
+                    Attach to run
+                  </Button>
+                )}
+              </div>
+            </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
