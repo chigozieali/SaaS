@@ -1,10 +1,10 @@
 "use client";
 
 import useSWR from "swr";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { signOut } from "next-auth/react";
-import { Lock, LogOut, Mail, MonitorSmartphone, UserRound } from "lucide-react";
+import { Lock, LogOut, Mail, MonitorSmartphone, Trash2, Upload, UserRound } from "lucide-react";
 import { PageHeader } from "@/components/modules/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -145,6 +145,30 @@ function initialProfile(me: ProfileMe) {
 function ProfileForm({ me, onMutate }: { me: ProfileMe; onMutate: () => void }) {
   const [profile, setProfile] = useState(initialProfile(me));
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Image must be 5 MB or smaller");
+      return;
+    }
+    setUploading(true);
+    const fd = new FormData();
+    fd.append("file", file);
+    const res = await fetch("/api/upload", { method: "POST", body: fd });
+    setUploading(false);
+    const d = await res.json().catch(() => null);
+    if (res.ok) {
+      toast.success("Photo uploaded");
+      setProfile((p) => ({ ...p, photoUrl: d.url }));
+    } else {
+      toast.error(d?.message ?? "Upload failed");
+    }
+  }
 
   async function saveProfile(e: React.FormEvent) {
     e.preventDefault();
@@ -174,14 +198,32 @@ function ProfileForm({ me, onMutate }: { me: ProfileMe; onMutate: () => void }) 
             {me.lastName[0]}
           </AvatarFallback>
         </Avatar>
-        <div className="grid flex-1 gap-2">
-          <Label htmlFor="photoUrl">Profile photo URL</Label>
-          <Input
-            id="photoUrl"
-            value={profile.photoUrl}
-            onChange={(e) => setProfile((p) => ({ ...p, photoUrl: e.target.value }))}
-            placeholder="https://…"
-          />
+        <div className="grid gap-2">
+          <div className="flex items-center gap-2">
+            <Button type="button" variant="outline" size="sm" disabled={uploading} onClick={() => fileInputRef.current?.click()}>
+              <Upload className="mr-2 h-4 w-4" />
+              {uploading ? "Uploading…" : "Upload photo"}
+            </Button>
+            {profile.photoUrl && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setProfile((p) => ({ ...p, photoUrl: "" }))}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Remove
+              </Button>
+            )}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              className="hidden"
+              onChange={handleFileUpload}
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">JPG, PNG, WebP or GIF up to 5 MB.</p>
         </div>
       </div>
       <div className="grid grid-cols-2 gap-4">
