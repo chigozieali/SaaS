@@ -59,6 +59,7 @@ export const navigation: NavItem[] = [
     icon: Users,
     children: [
       { title: "Bank Requests", href: "/hr/bank-requests", icon: Landmark, permission: "employees.edit" },
+      { title: "Tax & Pension Requests", href: "/hr/tax-requests", icon: FileText, permission: "employees.edit" },
       { title: "Employees", href: "/hr/employees", icon: UserPlus, permission: "employees.view" },
       { title: "Departments", href: "/hr/departments", icon: Building2, permission: "departments.view" },
       { title: "Leave", href: "/hr/leave", icon: CalendarDays, permission: "leave.view" },

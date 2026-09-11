@@ -29,7 +29,7 @@ model Organization {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  createdBy           User?                  @relation("OrgCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdBy           User?                    @relation("OrgCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   memberships         UserOrganization[]
   userPermissions     UserPermission[]
   roles               OrganizationRole[]
@@ -59,6 +59,58 @@ model Organization {
   notifications       Notification[]
   staffLoans          StaffLoan[]
   staffLoanRepayments StaffLoanRepayment[]
+  taxPensionRequests  TaxPensionEditRequest[]
+  notificationPrefs   NotificationPreference[]
+}
+
+// Tracks the devices a user is signed in on. Each successful sign-in creates a
+// row whose id travels inside the JWT; the row's `active` flag lets a user
+// revoke a single device. `User.tokenVersion` is a global kill-switch
+// ("log out from all devices").
+model DeviceSession {
+  id         String    @id @default(cuid())
+  userId     String
+  token      String    @unique
+  userAgent  String?
+  ip         String?
+  createdAt  DateTime  @default(now())
+  lastSeenAt DateTime?
+  active     Boolean   @default(true)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// Append-only login history for the "Login history" table.
+model LoginEvent {
+  id        String   @id @default(cuid())
+  userId    String
+  userAgent String?
+  ip        String?
+  success   Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
+// Per-user notification toggles keyed by event for the self-service page.
+model NotificationPreference {
+  id             String   @id @default(cuid())
+  userId         String
+  organizationId String
+  eventKey       String
+  emailEnabled   Boolean  @default(true)
+  inAppEnabled   Boolean  @default(true)
+  updatedAt      DateTime @updatedAt
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, eventKey])
 }
 
 model User {
@@ -68,18 +120,24 @@ model User {
   passwordHash String?
   image        String?
   isActive     Boolean  @default(true)
+  tokenVersion Int      @default(0)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  organizations    UserOrganization[]
-  createdOrgs      Organization[]     @relation("OrgCreatedBy")
-  auditLogs        AuditLog[]         @relation("AuditActor")
-  permissionGrants UserPermission[]
-  grantsMade       UserPermission[]   @relation("UserPermissionGrantedBy")
-  journalsCreated  JournalEntry[]     @relation("JournalCreated")
-  journalsApproved JournalEntry[]     @relation("JournalApproved")
-  journalsPosted   JournalEntry[]     @relation("JournalPosted")
-  journalsReversed JournalEntry[]     @relation("JournalReversed")
+  organizations        UserOrganization[]
+  createdOrgs          Organization[]           @relation("OrgCreatedBy")
+  auditLogs            AuditLog[]               @relation("AuditActor")
+  permissionGrants     UserPermission[]
+  grantsMade           UserPermission[]         @relation("UserPermissionGrantedBy")
+  journalsCreated      JournalEntry[]           @relation("JournalCreated")
+  journalsApproved     JournalEntry[]           @relation("JournalApproved")
+  journalsPosted       JournalEntry[]           @relation("JournalPosted")
+  journalsReversed     JournalEntry[]           @relation("JournalReversed")
+  deviceSessions       DeviceSession[]
+  loginEvents          LoginEvent[]
+  notificationPrefs    NotificationPreference[]
+  taxRequestsRequested TaxPensionEditRequest[]  @relation("TaxRequestedBy")
+  taxRequestsReviewed  TaxPensionEditRequest[]  @relation("TaxReviewedBy")
 }
 
 // Join table for user -> organization with role
@@ -255,6 +313,7 @@ model Employee {
   payslips            Payslip[]
   staffLoans          StaffLoan[]
   expenseClaims       Expense[]
+  taxPensionRequests  TaxPensionEditRequest[]
 
   @@unique([organizationId, employeeCode])
   @@index([organizationId])
@@ -377,6 +436,33 @@ model BankDetailRequest {
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   employee     Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([organizationId, status])
+}
+
+// Self-service changes to tax/pension identifiers (TIN, tax office, PFA,
+// RSA PIN) that must be reviewed and applied by HR.
+model TaxPensionEditRequest {
+  id             String    @id @default(cuid())
+  organizationId String
+  employeeId     String
+  requestedById  String?
+  tin            String?
+  taxOffice      String?
+  pfaName        String?
+  rsaPin         String?
+  status         String    @default("pending") // pending | approved | rejected
+  notes          String?
+  requestedAt    DateTime  @default(now())
+  reviewedById   String?
+  reviewedAt     DateTime?
+  reviewNotes    String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employee     Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  requestedBy  User?        @relation("TaxRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+  reviewedBy   User?        @relation("TaxReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
 
   @@index([employeeId])
   @@index([organizationId, status])

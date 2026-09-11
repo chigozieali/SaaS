@@ -10,12 +10,28 @@ export type NotificationInput = {
 export async function notifyUsersByUserId(
   organizationId: string,
   userIds: string[],
-  input: NotificationInput
+  input: NotificationInput,
+  eventKey?: string
 ) {
   const unique = [...new Set(userIds.filter(Boolean))];
   if (unique.length === 0) return;
+
+  // Skip users who have turned off in-app notifications for this event type.
+  let targets = unique;
+  if (eventKey) {
+    const prefs = await db.notificationPreference.findMany({
+      where: { userId: { in: unique }, eventKey, inAppEnabled: false },
+      select: { userId: true },
+    });
+    if (prefs.length > 0) {
+      const disabled = new Set(prefs.map((p) => p.userId));
+      targets = unique.filter((id) => !disabled.has(id));
+    }
+  }
+  if (targets.length === 0) return;
+
   await db.notification.createMany({
-    data: unique.map((userId) => ({
+    data: targets.map((userId) => ({
       organizationId,
       userId,
       title: input.title,
@@ -34,7 +50,8 @@ export async function notifyUsersByUserId(
 export async function notifyUsersByEmail(
   organizationId: string,
   emails: string[],
-  input: NotificationInput
+  input: NotificationInput,
+  eventKey?: string
 ) {
   const unique = [...new Set(emails.filter((e): e is string => !!e))];
   if (unique.length === 0) return;
@@ -56,6 +73,6 @@ export async function notifyUsersByEmail(
   const activeIds = new Set(memberships.map((m) => m.userId));
   const targetUserIds = users.filter((u) => activeIds.has(u.id)).map((u) => u.id);
   if (targetUserIds.length > 0) {
-    await notifyUsersByUserId(organizationId, targetUserIds, input);
+    await notifyUsersByUserId(organizationId, targetUserIds, input, eventKey);
   }
 }

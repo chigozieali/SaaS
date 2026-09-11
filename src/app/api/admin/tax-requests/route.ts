@@ -9,10 +9,10 @@ export async function GET() {
   if ("error" in res) return res.error;
   const { ctx } = res;
 
-  const requests = await db.bankDetailRequest.findMany({
+  const requests = await db.taxPensionEditRequest.findMany({
     where: { organizationId: ctx.organizationId },
     include: {
-      employee: { select: { id: true, firstName: true, lastName: true, employeeCode: true } },
+      employee: { select: { id: true, firstName: true, lastName: true, employeeCode: true, email: true } },
     },
     orderBy: { requestedAt: "desc" },
   });
@@ -34,14 +34,14 @@ export async function PATCH(req: Request) {
   const parsed = patchSchema.safeParse(body);
   if (!parsed.success) return apiError(parsed.error.issues[0]?.message ?? "Invalid input");
 
-  const request = await db.bankDetailRequest.findFirst({
+  const request = await db.taxPensionEditRequest.findFirst({
     where: { id: parsed.data.id, organizationId: ctx.organizationId },
   });
-  if (!request) return apiError("Bank detail request not found", 404);
+  if (!request) return apiError("Tax/pension request not found", 404);
   if (request.status !== "pending") return apiError("Request already reviewed");
 
   const updated = await db.$transaction(async (tx) => {
-    const req = await tx.bankDetailRequest.update({
+    const req = await tx.taxPensionEditRequest.update({
       where: { id: request.id },
       data: {
         status: parsed.data.status,
@@ -54,9 +54,10 @@ export async function PATCH(req: Request) {
       await tx.employee.update({
         where: { id: request.employeeId },
         data: {
-          bankName: request.bankName,
-          bankAccountNumber: request.bankAccountNumber,
-          bankAccountName: request.bankAccountName,
+          tin: request.tin ?? undefined,
+          taxOffice: request.taxOffice ?? undefined,
+          pfaName: request.pfaName ?? undefined,
+          rsaPin: request.rsaPin ?? undefined,
         },
       });
     }
@@ -67,9 +68,9 @@ export async function PATCH(req: Request) {
     organizationId: ctx.organizationId,
     userId: ctx.userId,
     action: "update",
-    entity: "bank_detail_request",
+    entity: "tax_pension_edit_request",
     entityId: request.id,
-    metadata: { status: parsed.data.status },
+    metadata: { status: parsed.data.status, employeeId: request.employeeId },
   });
 
   const worker = await db.employee.findFirst({
@@ -77,13 +78,13 @@ export async function PATCH(req: Request) {
     select: { email: true },
   });
   await notifyUsersByEmail(ctx.organizationId, [worker?.email ?? ""], {
-    title: parsed.data.status === "approved" ? "Bank details updated" : "Bank change request rejected",
+    title: parsed.data.status === "approved" ? "Tax & pension details updated" : "Tax & pension change request rejected",
     message:
       parsed.data.status === "approved"
-        ? `Your bank details were updated to ${request.bankName} · ${request.bankAccountNumber}.`
-        : `Your request to change bank details was rejected.${parsed.data.reviewNotes ? ` Note: ${parsed.data.reviewNotes}` : ""}`,
+        ? "Your tax and pension identifiers were updated."
+        : `Your request to change tax/pension identifiers was rejected.${parsed.data.reviewNotes ? ` Note: ${parsed.data.reviewNotes}` : ""}`,
     type: parsed.data.status === "approved" ? "success" : "destructive",
-    link: "/hr/my-records",
+    link: "/hr/my-account",
   }, "hr_requests");
 
   return apiOk({ request: updated });
