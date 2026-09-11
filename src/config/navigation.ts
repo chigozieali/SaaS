@@ -40,8 +40,8 @@ export const navigation: NavItem[] = [
     icon: LayoutDashboard,
   },
   {
-    title: "HR",
-    icon: Users,
+    title: "My Workspace",
+    icon: UserRound,
     children: [
       { title: "My Records", href: "/hr/my-records", icon: UserRound, permission: "employees.self" },
       { title: "My Attendance", href: "/hr/my-attendance", icon: CalendarCheck2, permission: "employees.self" },
@@ -52,6 +52,12 @@ export const navigation: NavItem[] = [
       { title: "My Benefits", href: "/hr/my-benefits", icon: HeartPulse, permission: "employees.self" },
       { title: "Notifications", href: "/hr/notifications", icon: BellRing, permission: "employees.self" },
       { title: "My Account", href: "/hr/my-account", icon: Settings, permission: "employees.self" },
+    ],
+  },
+  {
+    title: "HR",
+    icon: Users,
+    children: [
       { title: "Bank Requests", href: "/hr/bank-requests", icon: Landmark, permission: "employees.edit" },
       { title: "Employees", href: "/hr/employees", icon: UserPlus, permission: "employees.view" },
       { title: "Departments", href: "/hr/departments", icon: Building2, permission: "departments.view" },
